@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 
-// Import Chart Components
+// --- COMPONENT IMPORTS ---
+import { PitchLab } from './pitchLab';
 import { PerformanceScatter, SimilarityNetwork } from './ChartsView';
+import { EducationPanel } from './EducationPanel';
 
 // --- CONSTANTS ---
 const TEAM_LOGOS = {
@@ -62,15 +64,15 @@ const PercentileBar = ({ label, value, percentile, suffix = '' }) => {
   )
 }
 
-// --- PLAYER LIST VIEW (GRID & TABLE) ---
+// --- PLAYER LIST VIEW ---
 
 const PlayerListView = ({ 
   pitchers, viewMode, setViewMode, selectedPlayer, handleCardClick, 
   showAdvanced, setShowAdvanced, similarPlayers, isCompareMode, 
   setIsCompareMode, setCompareTarget,
   visibleCols, toggleColModal,
-  sortConfig, handleSort, // Sort Props
-  page, rowsPerPage, totalPlayers, handleChangePage, handleChangeRowsPerPage // Pagination Props
+  sortConfig, handleSort, 
+  page, rowsPerPage, totalPlayers, handleChangePage, handleChangeRowsPerPage 
 }) => {
   
   const formatCell = (player, col) => {
@@ -83,7 +85,6 @@ const PlayerListView = ({
     return val;
   }
 
-  // Helper: Render Sort Icon
   const getSortIcon = (col) => {
     if (sortConfig.key !== col) return <span className="sort-icon opacity-30">↕</span>;
     return sortConfig.direction === 'asc' ? <span className="sort-icon active">↑</span> : <span className="sort-icon active">↓</span>;
@@ -113,7 +114,6 @@ const PlayerListView = ({
           <button className={viewMode === 'table' ? 'active' : ''} onClick={() => setViewMode('table')}>≡ Table</button>
         </div>
         
-        {/* Only show select stats in table mode */}
         {viewMode === 'table' && <button className="toggle-btn" onClick={toggleColModal}>⚙️ Select Stats</button>}
         
         <button className={`toggle-btn ${showAdvanced ? 'active' : ''}`} onClick={() => setShowAdvanced(!showAdvanced)}>{showAdvanced ? 'Stats: On' : 'Stats: Off'}</button>
@@ -137,7 +137,7 @@ const PlayerListView = ({
           ))}
         </div>
       ) : (
-        /* TABLE VIEW WITH STICKY COLUMNS AND PAGINATION */
+        /* TABLE VIEW */
         <div className="table-wrapper">
           <div className="table-container">
             <table className="player-table">
@@ -162,7 +162,6 @@ const PlayerListView = ({
             </table>
           </div>
           
-          {/* PAGINATION BAR */}
           <div className="pagination-bar">
             <div className="rows-per-page">
               <span>Rows per page:</span>
@@ -190,42 +189,39 @@ function App() {
   const [pitchers, setPitchers] = useState([])
   const [loading, setLoading] = useState(true)
   
-  // Navigation & View State
-  const [activeTab, setActiveTab] = useState('players') // 'players', 'scatter', 'network'
+  // Navigation
+  const [activeTab, setActiveTab] = useState('players') // 'players', 'scatter', 'network', 'lab'
   const [viewMode, setViewMode] = useState('grid')
 
-  // Filters & Sorting
+  // Filters
   const [search, setSearch] = useState('')
   const [archetype, setArchetype] = useState('')
   const [archetypeList, setArchetypeList] = useState([])
   
-  // State for Table/API Sorting
+  // Sorting & Pagination
   const [sortConfig, setSortConfig] = useState({ key: 'WAR', direction: 'desc' })
-  
-  // Pagination State
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(50)
   const [totalPlayers, setTotalPlayers] = useState(0)
 
-  // Selection & Modal States
+  // Selection States
   const [selectedPlayer, setSelectedPlayer] = useState(null)
   const [similarPlayers, setSimilarPlayers] = useState([])
   const [showAdvanced, setShowAdvanced] = useState(false)
-  
   const [visibleCols, setVisibleCols] = useState(DEFAULT_COLS)
   const [showColModal, setShowColModal] = useState(false)
   
+  // Comparison States
   const [isCompareMode, setIsCompareMode] = useState(false)
   const [compareTarget, setCompareTarget] = useState(null)
   const [compareSearch, setCompareSearch] = useState('')
   const [compareResults, setCompareResults] = useState([])
 
-  // Fetch Archetypes on Mount
   useEffect(() => {
     axios.get('http://127.0.0.1:8000/archetypes').then(response => setArchetypeList(response.data)).catch(console.error)
   }, [])
 
-  // MAIN DATA FETCH (Triggered by any filter/sort/page change)
+  // MAIN DATA FETCH
   useEffect(() => {
     setLoading(true)
     const params = { 
@@ -237,7 +233,7 @@ function App() {
     if (search) params.search = search
     if (archetype && archetype !== 'All Archetypes') params.archetype = archetype
 
-    // If viewing charts, fetch ALL players (no limit) so charts are populated
+    // Fetch all players for Charts/Lab view (no pagination)
     if (activeTab !== 'players') {
         params.limit = 1000; 
         params.skip = 0;
@@ -245,7 +241,6 @@ function App() {
 
     axios.get('http://127.0.0.1:8000/pitchers', { params })
       .then(response => { 
-        // Backend returns { data: [], total: 100 }
         setPitchers(response.data.data) 
         setTotalPlayers(response.data.total)
         setLoading(false) 
@@ -253,10 +248,10 @@ function App() {
       .catch(console.error)
   }, [search, archetype, sortConfig, page, rowsPerPage, activeTab]) 
 
-  // Reset page to 0 if filters change
+  // Reset page when filters change
   useEffect(() => { setPage(0) }, [search, archetype])
 
-  // Compare Search Effect
+  // Comparison Search
   useEffect(() => {
     if (!isCompareMode || !compareSearch) return
     const delayDebounce = setTimeout(() => {
@@ -265,15 +260,13 @@ function App() {
     return () => clearTimeout(delayDebounce)
   }, [compareSearch, isCompareMode])
 
-  // Handlers
   const handleSort = (key) => {
     let direction = 'desc'
-    // If clicking the same key, toggle direction. Otherwise default to desc.
     if (sortConfig.key === key && sortConfig.direction === 'desc') {
       direction = 'asc'
     }
     setSortConfig({ key, direction })
-    setPage(0) // Reset to first page
+    setPage(0)
   }
 
   const toggleCol = (col) => setVisibleCols(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
@@ -295,20 +288,17 @@ function App() {
             <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => setActiveTab('players')}>Player Cards</button>
             <button className={`nav-tab ${activeTab === 'scatter' ? 'active' : ''}`} onClick={() => setActiveTab('scatter')}>Scatter Plots</button>
             <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
+            <button className={`nav-tab ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => setActiveTab('lab')}>Pitch Lab 3D</button>
           </div>
         </div>
 
-        {/* Controls Bar (Search, Archetype, Grid Sorting) */}
         {activeTab === 'players' && (
           <div className="controls">
             <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
-
             <select value={archetype} onChange={e => setArchetype(e.target.value)}>
               <option value="">All Archetypes</option>
               {archetypeList.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
-
-            {/* In Grid View, provide a dropdown for sorting since there are no headers */}
             {viewMode === 'grid' && (
                 <select value={sortConfig.key} onChange={e => handleSort(e.target.value)}>
                 <option value="WAR">Sort: WAR</option>
@@ -321,10 +311,6 @@ function App() {
                 <option value="vFA (sc)">Sort: Fastball Velo</option>
                 </select>
             )}
-
-            <div className='view-toggle-mini'>
-              {/* Optional mini view toggles in header if desired, currently handled in sub-controls */}
-            </div>
           </div>
         )}
       </header>
@@ -357,11 +343,24 @@ function App() {
         
         {activeTab === 'scatter' && <PerformanceScatter data={pitchers} />}        
         {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
+
+        {activeTab === 'lab' && (
+          <div style={{ display: 'flex', height: '700px', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+                <PitchLab 
+                    player={selectedPlayer} 
+                    allPlayers={pitchers}
+                    setPlayer={setSelectedPlayer}
+                />
+            </div>
+            
+            <div style={{ borderLeft: '1px solid #334155' }}>
+                <EducationPanel />
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* --- MODALS --- */}
-
-      {/* 1. COLUMN SELECTOR MODAL */}
       {showColModal && (
         <div className="modal-overlay" onClick={() => setShowColModal(false)}>
           <div className="modal-content col-modal" onClick={e => e.stopPropagation()}>
@@ -381,7 +380,6 @@ function App() {
         </div>
       )}
 
-      {/* 2. COMPARISON MODAL */}
       {isCompareMode && selectedPlayer && (
         <div className="modal-overlay" onClick={() => setIsCompareMode(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>

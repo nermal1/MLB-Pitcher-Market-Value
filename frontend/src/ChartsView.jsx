@@ -3,7 +3,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import ForceGraph2D from 'react-force-graph-2d';
 import axios from 'axios';
 
-// --- INTERACTIVE SCATTER PLOT ---
+// --- 1. INTERACTIVE SCATTER PLOT ---
 export const PerformanceScatter = ({ data }) => {
   // State for Controls
   const [xMetric, setXMetric] = useState('Stuff+');
@@ -29,25 +29,20 @@ export const PerformanceScatter = ({ data }) => {
   // Unique Archetypes for Filter
   const archetypes = ['All', ...new Set(data.map(p => p.Archetype).filter(Boolean))];
 
-  // 1. FILTER & SLICE DATA
+  // Filter & Slice Data
   const processedData = data
     .filter(p => {
-        // Filter by Archetype
         if (archetype !== 'All' && p.Archetype !== archetype) return false;
-        // Filter out bad data for selected axes
         if (p[xMetric] === undefined || p[yMetric] === undefined) return false;
         return true;
     })
-    // Sort by Y-Metric Descending (so the "best" players show up first in the limited view)
     .sort((a, b) => b[yMetric] - a[yMetric])
-    .slice(0, playerCount) // Hard limit to prevent lag
+    .slice(0, playerCount)
     .map(p => ({
       ...p,
-      // Color Logic: Value Gap
       fill: p.kWAR_Diff > 0.2 ? '#4ade80' : (p.kWAR_Diff < -0.2 ? '#f87171' : '#a855f7')
     }));
 
-  // 2. DYNAMIC TOOLTIP
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const p = payload[0].payload;
@@ -57,12 +52,10 @@ export const PerformanceScatter = ({ data }) => {
             <p className="label">{p.Name}</p>
             <span className="tooltip-team">{p.Team} • {p.Archetype}</span>
           </div>
-          
           <p className="intro">
             {xMetric}: <strong>{typeof p[xMetric] === 'number' ? p[xMetric].toFixed(1) : p[xMetric]}</strong>
             {xMetric.includes('%') ? '%' : ''}
           </p>
-          
           <p className="intro">
             {yMetric}: <strong>{typeof p[yMetric] === 'number' ? p[yMetric].toFixed(1) : p[yMetric]}</strong>
              {yMetric.includes('%') ? '%' : ''}
@@ -75,37 +68,27 @@ export const PerformanceScatter = ({ data }) => {
 
   return (
     <div className="chart-container fade-in">
-      
-      {/* CHART HEADER & CONTROLS */}
       <div className="chart-header-row">
         <h2>League Landscape</h2>
-        
         <div className="chart-controls">
-           {/* X-Axis Selector */}
            <div className="control-group-mini">
              <label>X-Axis</label>
              <select value={xMetric} onChange={(e) => setXMetric(e.target.value)}>
                {metrics.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
              </select>
            </div>
-
-           {/* Y-Axis Selector */}
            <div className="control-group-mini">
              <label>Y-Axis</label>
              <select value={yMetric} onChange={(e) => setYMetric(e.target.value)}>
                {metrics.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
              </select>
            </div>
-
-           {/* Archetype Filter */}
            <div className="control-group-mini">
              <label>Filter</label>
              <select value={archetype} onChange={(e) => setArchetype(e.target.value)}>
                {archetypes.map(a => <option key={a} value={a}>{a}</option>)}
              </select>
            </div>
-
-           {/* Count Select (Fixed Options for Performance) */}
            <div className="control-group-mini">
              <label>Max Players</label>
              <select value={playerCount} onChange={(e) => setPlayerCount(Number(e.target.value))}>
@@ -120,39 +103,22 @@ export const PerformanceScatter = ({ data }) => {
       </div>
 
       <div className="legend-bar">
-          <span className="legend-item"><span className="dot green"></span> Undervalued (High kWAR)</span>
+          <span className="legend-item"><span className="dot green"></span> Undervalued</span>
           <span className="legend-item"><span className="dot purple"></span> Fair Value</span>
-          <span className="legend-item"><span className="dot red"></span> Overvalued (Low kWAR)</span>
+          <span className="legend-item"><span className="dot red"></span> Overvalued</span>
       </div>
 
       <div className="scatter-wrapper">
         <ResponsiveContainer width="100%" height={600}>
           <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-            
-            <XAxis 
-                type="number" 
-                dataKey={xMetric} 
-                name={xMetric} 
-                domain={['auto', 'auto']} 
-                stroke="#94a3b8"
-                tickFormatter={(val) => val.toFixed(0)}
-            >
+            <XAxis type="number" dataKey={xMetric} name={xMetric} domain={['auto', 'auto']} stroke="#94a3b8" tickFormatter={(val) => val.toFixed(0)}>
               <Label value={xMetric} offset={0} position="insideBottom" fill="#94a3b8" />
             </XAxis>
-            
-            <YAxis 
-                type="number" 
-                dataKey={yMetric} 
-                name={yMetric} 
-                domain={['auto', 'auto']} 
-                stroke="#94a3b8"
-            >
+            <YAxis type="number" dataKey={yMetric} name={yMetric} domain={['auto', 'auto']} stroke="#94a3b8">
               <Label value={yMetric} angle={-90} position="insideLeft" fill="#94a3b8" />
             </YAxis>
-            
             <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-            
             <Scatter name="Pitchers" data={processedData} fill="#8884d8" animationDuration={500} />
           </ScatterChart>
         </ResponsiveContainer>
@@ -160,7 +126,61 @@ export const PerformanceScatter = ({ data }) => {
     </div>
   )
 }
-// --- NETWORK GRAPH COMPONENT ---
+
+// --- 2. SIMILARITY TABLE (This was missing!) ---
+const SimilarityTable = ({ targetNode, neighbors, metrics, links }) => {
+    if (!targetNode) return null;
+
+    const formatVal = (val, metric) => {
+        if (val === undefined || val === null || isNaN(val)) return '-';
+        if (metric.includes('%')) return (val * 100).toFixed(1) + '%';
+        if (metric.includes('v') && metric.includes('(sc)')) return val.toFixed(1);
+        if (['ERA', 'SIERA', 'FIP', 'xFIP'].includes(metric)) return val.toFixed(2);
+        return val.toFixed(0);
+    };
+
+    return (
+        <div className="sim-table-container fade-in">
+            <h4>Similarity Breakdown</h4>
+            <div className="sim-table-wrapper">
+                <table className="sim-table">
+                    <thead>
+                        <tr>
+                            <th>Player</th>
+                            <th>Sim %</th>
+                            {metrics.map(m => <th key={m} className="stat-header">{m.length > 8 ? m.split(' ')[0] : m}</th>)}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr className="target-row">
+                            <td className="name-cell"><span className="marker-dot" style={{background: '#a855f7'}}></span>{targetNode.lastName}</td>
+                            <td>-</td>
+                            {metrics.map(m => <td key={m} className="stat-cell target-stat">{formatVal(targetNode[m], m)}</td>)}
+                        </tr>
+                        {neighbors.map(node => {
+                            const link = links.find(l => {
+                                const s = l.source.id || l.source;
+                                const t = l.target.id || l.target;
+                                return (s === node.id && t === targetNode.id) || (s === targetNode.id && t === node.id);
+                            });
+                            const simScore = link && link.similarity ? (link.similarity * 100).toFixed(0) : '?';
+                            
+                            return (
+                                <tr key={node.id}>
+                                    <td className="name-cell">{node.lastName}</td>
+                                    <td className="sim-cell">{simScore}%</td>
+                                    {metrics.map(m => <td key={m} className="stat-cell">{formatVal(node[m], m)}</td>)}
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    )
+}
+
+// --- 3. NETWORK GRAPH COMPONENT ---
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
     
@@ -168,8 +188,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     
     // Search State
-    const [inputValue, setInputValue] = useState(''); // What the user types
-    const [targetPlayer, setTargetPlayer] = useState(''); // What the graph uses (Active Player)
+    const [inputValue, setInputValue] = useState('');
+    const [targetPlayer, setTargetPlayer] = useState('');
     
     // Settings State
     const [neighborCount, setNeighborCount] = useState(5);
@@ -181,8 +201,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     // Debounce/Search Logic
     useEffect(() => {
         const timer = setTimeout(() => {
-            // Only update the graph target if the input matches a real player exactly
-            // or if it's empty (reset)
             if (inputValue === '') {
                 setTargetPlayer('');
             } else {
@@ -191,17 +209,15 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     setTargetPlayer(match.Name);
                 }
             }
-        }, 600); // Wait 600ms after typing stops
+        }, 600);
         return () => clearTimeout(timer);
     }, [inputValue, allPlayers]);
 
-    // Force selection on click
     const handleSelectPlayer = (name) => {
         setInputValue(name);
         setTargetPlayer(name);
     };
 
-    // Fetch Graph Data
     const fetchGraph = useCallback(() => {
         const params = new URLSearchParams();
         selectedMetrics.forEach(m => params.append('metrics', m));
@@ -212,10 +228,9 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             .then(res => {
                 setGraphData(res.data);
                 if(fgRef.current) {
-                    // Re-apply physics
                     fgRef.current.d3Force('link').distance(link => link.visualDist || 30);
                     fgRef.current.d3ReheatSimulation();
-                    if (targetPlayer) fgRef.current.zoom(3, 1000); // Auto-zoom
+                    if (targetPlayer) fgRef.current.zoom(3, 1000);
                 }
             })
             .catch(console.error);
@@ -223,32 +238,27 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     useEffect(() => { fetchGraph(); }, [fetchGraph]);
 
-    // OPTIMIZATION: Create a map of links for fast lookup in paintNode (Avoids O(N) search per frame)
     const linkMap = useMemo(() => {
         const map = {};
         graphData.links.forEach(l => {
             const s = l.source.id || l.source;
             const t = l.target.id || l.target;
-            // Create a unique key for the edge
             const key = [s, t].sort().join('-');
             map[key] = l;
         });
         return map;
     }, [graphData.links]);
 
-    // Node Painter
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
         const size = isTarget ? 20 : (targetPlayer ? 12 : 4); 
         
-        // 1. Circle
         const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
         ctx.fillStyle = colors[node.group] || '#94a3b8';
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fill();
 
-        // 2. Headshot
         if ((targetPlayer || globalScale > 2) && node.mlbId && node.mlbId !== 0) {
             const imgUrl = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${node.mlbId}/headshot/67/current`;
             
@@ -267,7 +277,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         }
 
-        // 3. Labels (Target Mode)
         if (targetPlayer) {
             const fontSize = 14 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
@@ -278,7 +287,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ctx.fillText(node.lastName, node.x, node.y + size + 2);
 
             if (!isTarget) {
-                // Fast Lookup using Memoized Map
                 const key = [node.id, targetPlayer].sort().join('-');
                 const link = linkMap[key];
                 
@@ -289,11 +297,10 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 }
             }
         }
-    }, [targetPlayer, linkMap]); // Depedency on linkMap instead of graphData.links
+    }, [targetPlayer, linkMap]);
 
     const toggleMetric = (m) => setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
 
-    // Table Data
     const targetNode = graphData.nodes.find(n => n.id === targetPlayer);
     const neighbors = graphData.nodes.filter(n => n.id !== targetPlayer);
 
@@ -308,12 +315,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     placeholder="Type to search..." 
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
-                    onBlur={() => {
-                        // Optional: Reset if invalid
-                        if (!allPlayers.some(p => p.Name === inputValue) && inputValue !== '') {
-                            // setInputValue(''); // Uncomment if you want strict reset
-                        }
-                    }}
                 />
                 <datalist id="players">
                     {allPlayers.map(p => <option key={p.Name} value={p.Name} />)}
@@ -338,6 +339,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                         <label>Neighbors: {neighborCount}</label>
                         <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} />
                     </div>
+                    
+                    {/* THIS IS THE COMPONENT THAT WAS MISSING IN YOUR FILE */}
                     <SimilarityTable targetNode={targetNode} neighbors={neighbors} metrics={selectedMetrics} links={graphData.links} />
                 </>
             )}

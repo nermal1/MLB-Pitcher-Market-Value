@@ -8,11 +8,13 @@ from typing import List, Optional
 from sklearn.metrics.pairwise import euclidean_distances
 from scipy import stats
 from sklearn.neighbors import NearestNeighbors
+import unicodedata
 
-# 1. Global Variable
+
+# Global Variable
 data_store = {}
 
-# 2. Define Lifespan (Logic for loading data)
+# Define Lifespan (Logic for loading data)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("⚾ Loading MLB Data Engine (Robust Version)...")
@@ -25,82 +27,95 @@ async def lifespan(app: FastAPI):
             df = pd.read_csv(master_path)
             df = df.fillna(0)
 
-            # --- 1. CLEAN & DEDUPLICATE ---
+            # --- 1. EXISTING CLEANING & ID LOGIC ---
             if 'Season' in df.columns and 'IP' in df.columns:
                 df = df.sort_values(by=['Name', 'Season', 'IP'], ascending=[True, False, False])
             
             df = df.drop_duplicates(subset=['Name'], keep='first')
             print(f"   -> Loaded {len(df)} Unique Players.")
 
-            df = df.drop_duplicates(subset=['Name'], keep='first')
-            print(f"   -> Loaded {len(df)} Unique Players.")
-
             id_path = os.path.join(project_root, "data", "raw", "id_map.csv")
 
             if os.path.exists(id_path):
-                print("   -> Loading ID Map...")
+                print("   -> Loading ID Map (Robust Match)...")
                 id_df = pd.read_csv(id_path)
-                df = df.merge(id_df, on='Name', how='left')
+                
+                # --- ROBUST NAME MATCHING START ---
+                def clean_name(name):
+                    if not isinstance(name, str): return ""
+
+                    n = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('utf-8')
+                    n = n.lower().strip()
+
+                    if ',' in n:
+                        parts = n.split(',')
+                        if len(parts) >= 2:
+                            n = f"{parts[1].strip()} {parts[0].strip()}"
+
+                    n = n.replace('.', '').replace("'", '').strip()
+
+                    for suffix in [' jr', ' sr', ' ii', ' iii', ' iv']:
+                        if n.endswith(suffix):
+                            n = n[:-len(suffix)]
+
+                    return n.strip()
+
+                # Create temporary clean columns for merging
+                df['merge_name'] = df['Name'].apply(clean_name)
+                
+                # Ensure id_map has a 'Name' column to clean. 
+                # Adjust 'PLAYERNAME', 'Name', or 'mlb_name' depending on your specific id_map.csv headers.
+                # Assuming the column in id_map.csv is 'Name' or 'PLAYERNAME':
+                id_name_col = 'Name' 
+                for col in id_df.columns:
+                    id_name_col = col
+                    break
+
+                id_df['merge_name'] = id_df[id_name_col].apply(clean_name)
+
+                id_df_clean = id_df[['merge_name', 'key_mlbam']].drop_duplicates(subset=['merge_name'])
+
+                df = df.merge(id_df_clean, on='merge_name', how='left')
                 df = df.rename(columns={'key_mlbam': 'MLBID'})
+
+                df = df.drop(columns=['merge_name'])
+
+                # --- ROBUST NAME MATCHING END ---
 
                 df['MLBID'] = df['MLBID'].fillna(0).astype(int)
             else:
                 print("   -> ID Map not found, skipping ID mapping.")
                 df['MLBID'] = 0
 
-            # --- 2. ROBUST COLUMN MAPPING (The Fix for Cutters & missing Sc) ---
-            # We map standard codes to whatever is in your CSV
-            # Codes: FA=Fastball, FC=Cutter, SI=Sinker, SL=Slider, CU=Curve, CH=Change, FS=Splitter
+            # --- 2. EXISTING COLUMN STANDARDIZATION ---
             pitch_codes = ['FA', 'FC', 'SI', 'SL', 'CU', 'CH', 'FS']
             
-            # Helper to find the best matching column for a metric
             def find_col(prefixes, suffixes, code):
-                # Generates combinations like: vFA (sc), vFA (pi), vFA
                 candidates = []
                 for p in prefixes:
                     for s in suffixes:
                         candidates.append(f"{p}{code}{s}")
-                
                 for c in candidates:
-                    # Case insensitive check
                     match = next((actual for actual in df.columns if actual.lower() == c.lower()), None)
                     if match: return match
                 return None
 
-            # Create standardized columns for Frontend
             for code in pitch_codes:
-                # 1. VELOCITY (Prefer (sc) -> (pi))
-                # Looks for: vFA (sc), vFA (pi), vFA
                 velo_col = find_col(['v'], [' (sc)', ' (pi)', ''], code)
-                if velo_col:
-                    df[f"v{code}"] = df[velo_col]
-                else:
-                    df[f"v{code}"] = 0.0
+                df[f"v{code}"] = df[velo_col] if velo_col else 0.0
 
-                # 2. SPIN RATE (Prefer (sc) -> (pi))
-                # Looks for: sFA (sc), sFA (pi), Spin_FA
                 spin_col = find_col(['s', 'Spin_'], [' (sc)', ' (pi)', ''], code)
-                if spin_col:
-                    df[f"s{code}"] = df[spin_col]
-                else:
-                    df[f"s{code}"] = 0.0
+                df[f"s{code}"] = df[spin_col] if spin_col else 0.0
 
-                # 3. USAGE (Prefer (sc) -> (pi) -> %)
-                # Looks for: FA% (sc), FA% (pi), FA%
                 usage_col = find_col([''], ['% (sc)', '% (pi)', '%'], code)
-                if usage_col:
-                    df[f"u{code}"] = df[usage_col]
-                else:
-                    df[f"u{code}"] = 0.0
+                df[f"u{code}"] = df[usage_col] if usage_col else 0.0
 
-            # --- 3. AUDIT CRITICAL STATS ---
+            # --- 3. EXISTING kWAR CALCULATION ---
             required_stats = ['WAR', 'FIP', 'SIERA', 'gmLI']
             for col in required_stats:
                 if col not in df.columns:
-                    # Handle missing columns gracefully
                     df[col] = 1.0 if col == 'gmLI' else 0.0
 
-            # --- 4. CALCULATE kWAR ---
             def calculate_kwar(row):
                 try:
                     base_war = float(row.get('WAR', 0))
@@ -108,21 +123,17 @@ async def lifespan(app: FastAPI):
                     siera = float(row.get('SIERA', 0))
                     ip = float(row.get('IP', 0))
                     
-                    # A. Skill Adjustment (SIERA vs FIP)
                     skill_adj = 0
                     if fip > 0 and siera > 0:
                         runs_saved = fip - siera
-                        # Conservative adjustment per inning
                         skill_adj = (runs_saved * ip / 9) / 10
                     
-                    # B. Leverage Adjustment
                     leverage = float(row.get('gmLI', 1.0))
                     position = row.get('Position', 'Reliever') 
 
                     if position == 'Starter':
                         k_war = base_war + skill_adj
                     else:  
-                        # Reliever Logic
                         multiplier = 1 + (leverage - 1) * 0.5
                         multiplier = max(0.85, min(multiplier, 1.5))
                         k_war = (base_war + skill_adj) * multiplier
@@ -134,13 +145,12 @@ async def lifespan(app: FastAPI):
             df['kWAR'] = df.apply(calculate_kwar, axis=1)
             df['kWAR_Diff'] = (df['kWAR'] - df['WAR']).round(2)
             
-            # Skill Gap (FIP Outperformer)
             if 'FIP' in df.columns and 'SIERA' in df.columns:
                 df['SkillGap'] = df['FIP'] - df['SIERA']
             else:
                 df['SkillGap'] = 0
 
-            # --- 5. PERCENTILES ---
+            # --- 4. EXISTING PERCENTILES ---
             stats_to_rank = {
                 'K%': True, 'BB%': False, 'Stuff+': True, 
                 'SIERA': False, 'vFA (sc)': True, 'WAR': True, 'kWAR': True
@@ -151,7 +161,42 @@ async def lifespan(app: FastAPI):
                     rankings = df[col].rank(pct=True)
                     if not higher_is_better: rankings = 1 - rankings
                     df[pct_col] = (rankings * 100).round(0)
+
+            # =========================================================
+            # --- 5. NEW STEP: MERGE PITCH LAB PHYSICS DATA (stats.csv) ---
+            # =========================================================
+            # PATH FIX: Pointing to the 'data' folder
+            stats_path = os.path.join(project_root, "stats.csv")
             
+            if os.path.exists(stats_path):
+                print(f"   -> 🧬 Loading Physics Data from: {stats_path}")
+                df_physics = pd.read_csv(stats_path)
+                
+                # Standardize ID for merge
+                if 'player_id' in df_physics.columns:
+                     df_physics = df_physics.rename(columns={'player_id': 'MLBID'})
+                
+                # Ensure MLBID is int for proper merging
+                if 'MLBID' in df_physics.columns:
+                    df_physics['MLBID'] = df_physics['MLBID'].fillna(0).astype(int)
+
+                # Merge (Left join keeps all main players, adds physics data where available)
+                # suffixes handles column name collisions if any
+                df = df.merge(df_physics, on='MLBID', how='left', suffixes=('', '_phys'))
+                
+                # DEBUG CHECK for Nestor Cortes specifically
+                nestor_check = df[df['Name'].str.contains("Nestor Cortes", case=False, na=False)]
+                if not nestor_check.empty:
+                    has_velo = nestor_check.iloc[0].get('ff_avg_speed', np.nan)
+                    print(f"   🕵️‍♂️ Nestor Cortes Check: ID={nestor_check.iloc[0]['MLBID']}, FF Velo Found? {pd.notna(has_velo)}")
+                
+                # Fill NaNs for players without Statcast data
+                df = df.fillna(0)
+            else:
+                print(f"   ⚠️ stats.csv not found at {stats_path}. Pitch Lab will use defaults.")
+
+            # =========================================================
+
             data_store["pitchers"] = df
             print(f"✅ SYSTEM READY: Loaded {len(df)} Pitchers.")
         else:
@@ -166,14 +211,14 @@ async def lifespan(app: FastAPI):
     yield
     data_store.clear()
 
-# 3. App Definition
+# App Definition
 app = FastAPI(title="MLB Pitcher Valuation API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# 4. Endpoints
+# Endpoints
 @app.get("/")
 def home():
     count = len(data_store.get("pitchers", []))
@@ -185,14 +230,14 @@ def get_pitchers(
     archetype: Optional[str] = None,
     position: Optional[str] = None,
     sort_by: str = "WAR", 
-    sort_order: str = "desc", # NEW: 'asc' or 'desc'
-    skip: int = 0,            # NEW: Pagination offset
+    sort_order: str = "desc", 
+    skip: int = 0,            
     limit: int = 50
 ):
     df = data_store.get("pitchers")
     if df is None or df.empty: return {"data": [], "total": 0}
     
-    # 1. Filter
+    # Filter
     if position: df = df[df['Position'] == position]
     if archetype and archetype != "All Archetypes": df = df[df['Archetype'] == archetype]
     if search: df = df[df['Name'].str.contains(search, case=False, na=False)]
@@ -200,16 +245,16 @@ def get_pitchers(
     # Calculate Total (Before Pagination)
     total_count = len(df)
         
-    # 2. Dynamic Sort Logic
+    # Dynamic Sort Logic
     if sort_by in df.columns:
         # Convert sort_order string to boolean
         ascending = (sort_order.lower() == "asc")
         df = df.sort_values(by=sort_by, ascending=ascending)
     
-    # 3. Pagination (Slice the dataframe)
+    # Pagination (Slice the dataframe)
     paginated_df = df.iloc[skip : skip + limit]
     
-    # 4. Return Data + Metadata
+    # Return Data + Metadata
     return {
         "data": paginated_df.replace({np.nan: None}).to_dict(orient="records"),
         "total": total_count,
@@ -252,7 +297,7 @@ def get_graph_data(
     df = data_store.get("pitchers")
     if df is None or df.empty: return {"nodes": [], "links": []}
 
-    # 1. Metrics Selection
+    # Metrics Selection
     if not metrics:
         features = ['K%', 'BB%', 'vFA (sc)', 'Stuff+']
     else:
@@ -263,16 +308,14 @@ def get_graph_data(
     if not valid_features:
         valid_features = ['K%', 'BB%', 'vFA (sc)', 'Stuff+']
     
-    # 2. Normalize Data
+    # Normalize Data
     from sklearn.preprocessing import StandardScaler
     
-    # CRASH FIX 1: Replace Infinite/NaN values in the matrix before scaling
     data_matrix = df[valid_features].replace([np.inf, -np.inf], 0).fillna(0).values
     
     scaler = StandardScaler()
     scaled_matrix = scaler.fit_transform(data_matrix)
 
-    # 3. Run Nearest Neighbors
     n_search = neighbors + 1 if target_player else 4 
     nbrs = NearestNeighbors(n_neighbors=min(n_search, len(df)), algorithm='ball_tree').fit(scaled_matrix)
     distances, indices = nbrs.kneighbors(scaled_matrix)
@@ -281,7 +324,7 @@ def get_graph_data(
     links = []
     seen_nodes = set()
 
-    # --- HELPER: SAFE NODE CREATION ---
+    # safe node creation function
     def get_node(idx):
         idx = int(idx)
         row = df.iloc[idx]
@@ -298,7 +341,7 @@ def get_graph_data(
             "team": str(row.get('Team', ''))
         }
         
-        # CRASH FIX 2: Sanitize every metric value
+        # sanitize data
         for feature in valid_features:
             val = row.get(feature, 0)
             
@@ -316,7 +359,7 @@ def get_graph_data(
             
         return node_data
 
-    # --- BUILD GRAPH ---
+    # build graph
     if target_player:
         target_rows = df[df['Name'].str.lower() == target_player.lower()]
         if target_rows.empty: return {"nodes": [], "links": []}
