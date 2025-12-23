@@ -215,7 +215,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MLB Pitcher Valuation API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    allow_origins=["*"],  # WARNING: Allows ALL websites to talk to your API. Fine for a portfolio/test.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Endpoints
