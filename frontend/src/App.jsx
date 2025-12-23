@@ -3,7 +3,7 @@ import axios from 'axios'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
-import { PitchLab } from './PitchLab';
+import { PitchLab } from './pitchLab';
 import { PerformanceScatter, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
 
