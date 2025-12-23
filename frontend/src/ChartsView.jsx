@@ -224,7 +224,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         params.append('neighbors', neighborCount);
         if (targetPlayer) params.append('target_player', targetPlayer);
 
-        axios.get(`http://127.0.0.1:8000/graph-data?${params.toString()}`)
+        axios.get(`https://pitch-lab-api.onrender.com/graph-data?${params.toString()}`)
             .then(res => {
                 setGraphData(res.data);
                 if(fgRef.current) {

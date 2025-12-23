@@ -218,7 +218,7 @@ function App() {
   const [compareResults, setCompareResults] = useState([])
 
   useEffect(() => {
-    axios.get('http://127.0.0.1:8000/archetypes').then(response => setArchetypeList(response.data)).catch(console.error)
+    axios.get('`https://pitch-lab-api.onrender.com/archetypes').then(response => setArchetypeList(response.data)).catch(console.error)
   }, [])
 
   // MAIN DATA FETCH
@@ -239,7 +239,7 @@ function App() {
         params.skip = 0;
     }
 
-    axios.get('http://127.0.0.1:8000/pitchers', { params })
+    axios.get('`https://pitch-lab-api.onrender.com/pitchers', { params })
       .then(response => { 
         setPitchers(response.data.data) 
         setTotalPlayers(response.data.total)
@@ -255,7 +255,7 @@ function App() {
   useEffect(() => {
     if (!isCompareMode || !compareSearch) return
     const delayDebounce = setTimeout(() => {
-      axios.get('http://127.0.0.1:8000/pitchers', { params: { search: compareSearch, limit: 5 } }).then(res => setCompareResults(res.data))
+      axios.get('`https://pitch-lab-api.onrender.com/pitchers', { params: { search: compareSearch, limit: 5 } }).then(res => setCompareResults(res.data))
     }, 300)
     return () => clearTimeout(delayDebounce)
   }, [compareSearch, isCompareMode])
@@ -276,7 +276,7 @@ function App() {
   const handleCardClick = (player) => {
     if (selectedPlayer?.Name === player.Name) { setSelectedPlayer(null); return; }
     setSelectedPlayer(player); setSimilarPlayers([])
-    axios.get(`http://127.0.0.1:8000/pitchers/${player.Name}/similar`).then(r => setSimilarPlayers(r.data))
+    axios.get(`https://pitch-lab-api.onrender.com/pitchers/${player.Name}/similar`).then(r => setSimilarPlayers(r.data))
   }
 
   return (
