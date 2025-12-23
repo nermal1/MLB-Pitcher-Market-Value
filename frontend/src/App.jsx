@@ -3,7 +3,7 @@ import axios from 'axios'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
-import { PitchLab } from './pitchLab';
+import { PitchLab } from './PitchLab';
 import { PerformanceScatter, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
 
@@ -218,7 +218,8 @@ function App() {
   const [compareResults, setCompareResults] = useState([])
 
   useEffect(() => {
-    axios.get('`https://pitch-lab-api.onrender.com/archetypes').then(response => setArchetypeList(response.data)).catch(console.error)
+    // FIXED: Removed backtick ` inside the URL string
+    axios.get('https://pitch-lab-api.onrender.com/archetypes').then(response => setArchetypeList(response.data)).catch(console.error)
   }, [])
 
   // MAIN DATA FETCH
@@ -239,7 +240,8 @@ function App() {
         params.skip = 0;
     }
 
-    axios.get('`https://pitch-lab-api.onrender.com/pitchers', { params })
+    // FIXED: Removed backtick ` inside the URL string
+    axios.get('https://pitch-lab-api.onrender.com/pitchers', { params })
       .then(response => { 
         setPitchers(response.data.data) 
         setTotalPlayers(response.data.total)
@@ -255,7 +257,8 @@ function App() {
   useEffect(() => {
     if (!isCompareMode || !compareSearch) return
     const delayDebounce = setTimeout(() => {
-      axios.get('`https://pitch-lab-api.onrender.com/pitchers', { params: { search: compareSearch, limit: 5 } }).then(res => setCompareResults(res.data))
+      // FIXED: Removed backtick ` inside the URL string
+      axios.get('https://pitch-lab-api.onrender.com/pitchers', { params: { search: compareSearch, limit: 5 } }).then(res => setCompareResults(res.data))
     }, 300)
     return () => clearTimeout(delayDebounce)
   }, [compareSearch, isCompareMode])
