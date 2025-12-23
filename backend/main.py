@@ -223,6 +223,7 @@ app.add_middleware(
 
 # Endpoints
 @app.get("/")
+@app.head("/")
 def home():
     count = len(data_store.get("pitchers", []))
     return {"message": "MLB Pitcher API is Live", "pitcher_count": count}
