@@ -294,48 +294,56 @@ const GlossaryView = () => {
       {/* DEEP DIVE MODAL */}
       {activeMetric && (
         <div className="modal-overlay" onClick={() => setActiveMetric(null)}>
-            <div className="modal-content deep-dive-modal" onClick={e => e.stopPropagation()}>
+            <div className="deep-dive-moda" onClick={e => e.stopPropagation()}>
                 <div className="deep-dive-header">
-                    <h2>{activeMetric.key}</h2>
-                    <span className="subtitle">{activeMetric.name}</span>
+                    <div className='header-title'>
+                      <span className='subtitle'>{activeMetric.name}</span>
+                      <h2>{activeMetric.key}</h2>
+                    </div>
+                    <button className='close-btn-icon' onClick={() => setActiveMetric(null)}>x</button>
                 </div>
                 
                 <div className="deep-dive-body">
-                    <div className="dd-section definition">
+                    <div className="dd-top-row">
+                      <div className='dd-box'>
                         <h4>Definition</h4>
                         <p>{activeMetric.desc}</p>
+                      </div>
+                      {activeMetric.calc && (
+                        <div className='dd-box'>
+                        <h4>Formula / Source</h4>
+                        <div className='formula-box'>
+                          {activeMetric.calc}
+                        </div>
+                      </div>
+                      )}
                     </div>
 
-                    {activeMetric.calc && (
-                        <div className="dd-section formula">
-                            <h4>Calculation</h4>
-                            <code>{activeMetric.calc}</code>
-                        </div>
-                    )}
+                    <div className='dd-comparison-grid'>
+                      <div className='dd-card usage'>
+                        <h4>When to Use It</h4>
+                        <p>{activeMetric.usage || "General Evaluation."}</p>
+                      </div>
 
-                    <div className="dd-grid">
-                        <div className="dd-card usage">
-                            <h4>Usage</h4>
-                            <p>{activeMetric.usage || "General evaluation."}</p>
-                        </div>
-                        <div className="dd-card flaws">
-                            <h4>Flaws</h4>
-                            <p>{activeMetric.flaws || "None specifically noted."}</p>
-                        </div>
+                      <div className='dd-card flaws'>
+                        <h4>Limitations and Flaws</h4>
+                        <p>{activeMetric.flaws || "None specifically noted."}</p>
+                      </div>
                     </div>
 
-                    <div className="dd-section analysis">
-                        <h4>Analyst's Take</h4>
-                        <p>{activeMetric.deepDive || "No deep dive analysis available for this metric."}</p>
+                    <div className='dd-analyst-take'>
+                      <h4>The Analyst's Take</h4>
+                      <p>{activeMetric.deepDive || "No deep dive  analysis for this metric."}</p>
                     </div>
-                </div>
-                <button className="close-btn" onClick={() => setActiveMetric(null)}>Close</button>
+                    
             </div>
         </div>
-      )}
     </div>
+  )}
+  </div>
   )
 }
+
 
 const PlayerListView = ({ 
   pitchers, viewMode, setViewMode, selectedPlayer, handleCardClick, 
