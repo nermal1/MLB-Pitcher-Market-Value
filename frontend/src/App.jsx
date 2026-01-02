@@ -250,23 +250,41 @@ const PitchArsenal = memo(({ player }) => {
 // --- SUB-VIEWS ---
 
 const GlossaryView = () => {
-  const [activeMetric, setActiveMetric] = useState(null);
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedMetric, setExpandedMetric] = useState(null); // Which item is currently open in the sidebar?
 
+  // Memoize categories
   const categories = useMemo(() => [
     { title: 'Basic Metrics', keys: COLUMN_CATEGORIES.basic },
     { title: 'Advanced Sabermetrics', keys: COLUMN_CATEGORIES.advanced }
   ], []);
 
-  const openDeepDive = (key) => {
-    const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'Standard statistical metric.' };
-    setActiveMetric({ key, ...def });
+  // Handle clicking a card from the main grid
+  const handleGridClick = (key) => {
+    setExpandedMetric(key); // Set this metric as the "Active/Open" one
+    setSidebarOpen(true);   // Open the sidebar
+  };
+
+  // Toggle accordion items inside the sidebar
+  const toggleAccordion = (key) => {
+    // If clicking the already open one, close it. Otherwise, open the new one.
+    setExpandedMetric(prev => prev === key ? null : key);
   };
 
   return (
     <div className="glossary-container fade-in">
+      
+      {/* 1. HAMBURGER BUTTON (Fixed Position) */}
+      {!isSidebarOpen && (
+        <button className="sidebar-trigger" onClick={() => setSidebarOpen(true)} title="Open Metrics Sidebar">
+          ☰
+        </button>
+      )}
+
+      {/* 2. MAIN GRID CONTENT */}
       <div className="glossary-header">
         <h2>Statistical Glossary</h2>
-        <p>Click any card for a deep dive analysis.</p>
+        <p>Click any card below (or the menu icon ☰) to open the details sidebar.</p>
       </div>
 
       {categories.map(cat => (
@@ -274,16 +292,15 @@ const GlossaryView = () => {
           <h3>{cat.title}</h3>
           <div className="glossary-grid">
             {cat.keys.map(key => {
-              const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'Standard statistical metric.' };
+              const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'Metric' };
               return (
-                <div key={key} className="glossary-card interactable" onClick={() => openDeepDive(key)}>
+                <div key={key} className="glossary-card interactable" onClick={() => handleGridClick(key)}>
                   <div className="card-top">
                     <strong>{key}</strong>
                     {['kWAR', 'Stuff+', 'SIERA'].includes(key) && <span className="key-badge">KEY</span>}
                   </div>
                   <div className="card-name">{def.name}</div>
-                  <p>{def.desc}</p>
-                  <div className="click-hint">Click for Deep Dive ↘</div>
+                  <div className="click-hint">View Details →</div>
                 </div>
               )
             })}
@@ -291,56 +308,77 @@ const GlossaryView = () => {
         </div>
       ))}
 
-      {/* DEEP DIVE MODAL */}
-      {activeMetric && (
-        <div className="modal-overlay" onClick={() => setActiveMetric(null)}>
-            <div className="deep-dive-moda" onClick={e => e.stopPropagation()}>
-                <div className="deep-dive-header">
-                    <div className='header-title'>
-                      <span className='subtitle'>{activeMetric.name}</span>
-                      <h2>{activeMetric.key}</h2>
-                    </div>
-                    <button className='close-btn-icon' onClick={() => setActiveMetric(null)}>x</button>
-                </div>
-                
-                <div className="deep-dive-body">
-                    <div className="dd-top-row">
-                      <div className='dd-box'>
-                        <h4>Definition</h4>
-                        <p>{activeMetric.desc}</p>
-                      </div>
-                      {activeMetric.calc && (
-                        <div className='dd-box'>
-                        <h4>Formula / Source</h4>
-                        <div className='formula-box'>
-                          {activeMetric.calc}
-                        </div>
-                      </div>
-                      )}
-                    </div>
+      {/* 3. SIDEBAR BACKDROP (Click to close) */}
+      {isSidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)}></div>}
 
-                    <div className='dd-comparison-grid'>
-                      <div className='dd-card usage'>
-                        <h4>When to Use It</h4>
-                        <p>{activeMetric.usage || "General Evaluation."}</p>
-                      </div>
-
-                      <div className='dd-card flaws'>
-                        <h4>Limitations and Flaws</h4>
-                        <p>{activeMetric.flaws || "None specifically noted."}</p>
-                      </div>
-                    </div>
-
-                    <div className='dd-analyst-take'>
-                      <h4>The Analyst's Take</h4>
-                      <p>{activeMetric.deepDive || "No deep dive  analysis for this metric."}</p>
-                    </div>
-                    
-            </div>
+      {/* 4. SLIDING SIDEBAR */}
+      <div className={`glossary-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <h3>Metric Explorer</h3>
+          <button className="close-btn-icon" onClick={() => setSidebarOpen(false)}>✕</button>
         </div>
+
+        <div className="sidebar-content">
+          {categories.map(cat => (
+            <div key={cat.title} style={{ marginBottom: '2rem' }}>
+              <h4 style={{ color: '#94a3b8', paddingLeft: '0.5rem', marginBottom: '1rem', textTransform: 'uppercase', fontSize: '0.8rem' }}>
+                {cat.title}
+              </h4>
+              
+              {cat.keys.map(key => {
+                const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'No definition available.' };
+                const isOpen = expandedMetric === key;
+
+                return (
+                  <div key={key} id={`metric-${key}`} className={`metric-accordion-item ${isOpen ? 'active' : ''}`}>
+                    {/* Header: Always visible */}
+                    <div className="accordion-header" onClick={() => toggleAccordion(key)}>
+                      <span>{key} <span style={{fontWeight:'normal', fontSize:'0.85rem', color:'#94a3b8'}}>- {def.name}</span></span>
+                      <span className="arrow-icon">▼</span>
+                    </div>
+
+                    {/* Body: Visible only when open */}
+                    {isOpen && (
+                      <div className="accordion-body">
+                        <div>
+                          <h4>Definition</h4>
+                          <p>{def.desc}</p>
+                        </div>
+                        
+                        {def.calc && (
+                          <div>
+                            <h4>Calculation / Formula</h4>
+                            <div className="sidebar-formula">{def.calc}</div>
+                          </div>
+                        )}
+
+                        <div className="sidebar-tags">
+                            <div className="tag-badge tag-good">✅ Usage</div>
+                            <div className="tag-badge tag-bad">⚠️ Flaws</div>
+                        </div>
+
+                        <div>
+                           <p><strong>Use for:</strong> {def.usage}</p>
+                           <p style={{marginTop: '0.5rem'}}><strong>Watch out for:</strong> {def.flaws}</p>
+                        </div>
+
+                        {def.deepDive && (
+                          <div style={{ marginTop: '0.5rem', padding: '1rem', background: '#1e293b', borderLeft: '3px solid #a855f7', borderRadius: '4px' }}>
+                            <h4 style={{ color: '#a855f7', marginBottom: '0.5rem' }}>💡 Analyst Insight</h4>
+                            <p>{def.deepDive}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
-  )}
-  </div>
   )
 }
 
