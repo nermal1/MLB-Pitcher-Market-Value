@@ -199,6 +199,7 @@ const PlayerHeadshot = memo(({ mlbId, size = 'large' }) => {
 
 const TeamLogo = memo(({ team }) => {
   let code = team ? TEAM_LOGOS[team] || team.toLowerCase() : 'mlb';
+  // Normalize team codes for logos if necessary
   if (code === 'was') code = 'wsh'; 
   return <img loading="lazy" src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/mlb/500/${code}.png&w=100&h=100`} alt={team} className="team-logo" onError={(e) => e.target.style.display = 'none'} />
 });
@@ -276,6 +277,7 @@ const GlossaryView = () => {
 
       <div className="glossary-header">
         <h2>Statistical Glossary</h2>
+        <p>Click any card below (or the menu icon ☰) to open the details sidebar.</p>
       </div>
 
       {categories.map(cat => (
@@ -339,7 +341,6 @@ const GlossaryView = () => {
                           </div>
                         )}
 
-                        {/* UPDATED LAYOUT: Usage & Flaws Blocks */}
                         <div className="usage-flaws-section">
                             <div className="uf-block">
                                 <div className="tag-badge tag-good">Usage</div>
@@ -479,177 +480,127 @@ const PlayerListView = ({
 // --- MAIN APP COMPONENT ---
 
 function App() {
-  const [displayPitchers, setDisplayPitchers] = useState([])
-  const [pitchers, setPitchers] = useState([])
-  const [loading, setLoading] = useState(true)
+  // 1. GLOBAL STATE: Holds all ~2000 players fetched ONCE
+  const [globalData, setGlobalData] = useState([]); 
+  const [loading, setLoading] = useState(true);
   
-  // Navigation
-  const [activeTab, setActiveTab] = useState('players') 
-  const [viewMode, setViewMode] = useState('grid')
-
-  // Filters
-  const [search, setSearch] = useState('')
-  const [archetype, setArchetype] = useState('')
-  const [archetypeList, setArchetypeList] = useState([])
-  const [teamFilter, setTeamFilter] = useState('All'); // NEW TEAM STATE
+  // Navigation & Filters
+  const [activeTab, setActiveTab] = useState('players');
+  const [viewMode, setViewMode] = useState('grid');
+  const [search, setSearch] = useState('');
+  const [archetype, setArchetype] = useState('');
+  const [archetypeList, setArchetypeList] = useState([]);
+  const [teamFilter, setTeamFilter] = useState('All');
   const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
   
-  // Sorting & Pagination
-  const [sortConfig, setSortConfig] = useState({ key: 'WAR', direction: 'desc' })
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(50)
-  const [totalPlayers, setTotalPlayers] = useState(0)
+  // Pagination & Sorting
+  const [sortConfig, setSortConfig] = useState({ key: 'WAR', direction: 'desc' });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
 
-  // Selection States
-  const [selectedPlayer, setSelectedPlayer] = useState(null)
-  const [similarPlayers, setSimilarPlayers] = useState([])
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [visibleCols, setVisibleCols] = useState(DEFAULT_COLS)
-  const [showColModal, setShowColModal] = useState(false)
+  // Selection & Modal States
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [similarPlayers, setSimilarPlayers] = useState([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [visibleCols, setVisibleCols] = useState(DEFAULT_COLS);
+  const [showColModal, setShowColModal] = useState(false);
   
   // Comparison States
-  const [isCompareMode, setIsCompareMode] = useState(false)
-  const [compareTarget, setCompareTarget] = useState(null)
-  const [compareSearch, setCompareSearch] = useState('')
-  const [compareResults, setCompareResults] = useState([])
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [compareTarget, setCompareTarget] = useState(null);
+  const [compareSearch, setCompareSearch] = useState('');
+  const [compareResults, setCompareResults] = useState([]);
 
-  const [globalData, setGlobalData] = useState([]); 
-  
-
-  // Initial Fetch: Archetypes
+  // --- INITIAL DATA FETCH (RUNS ONCE) ---
   useEffect(() => {
+    // 1. Fetch Archetypes
     axios.get(`${API_BASE_URL}/archetypes`)
-      .then(response => setArchetypeList(response.data))
-      .catch(console.error)
-  }, [])
+      .then(res => setArchetypeList(res.data))
+      .catch(console.error);
 
-  // Main Data Fetch
-  useEffect(() => {
-    if (activeTab === 'info') { setLoading(false); return; }
-
-    setLoading(true)
-
-    const isGlobalFetchNeeded = (activeTab !== 'players') || (teamFilter !== 'All');
-
-    const params = { 
-      limit: isGlobalFetchNeeded ? 1000 : rowsPerPage,
-      skip: isGlobalFetchNeeded ? 0 : page * rowsPerPage,
-      sort_by: sortConfig.key,
-      sort_order: sortConfig.direction
-    }
-
-    if (!isGlobalFetchNeeded) {
-        if (search && search.trim()) params.search = search.trim();
-        if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
-    }
-
-    axios.get(`${API_BASE_URL}/pitchers`, { params })
+    // 2. Fetch ALL Pitchers (High limit to get everyone at start)
+    setLoading(true);
+    axios.get(`${API_BASE_URL}/pitchers`, { params: { limit: 2500, sort_by: 'WAR', sort_order: 'desc' } })
       .then(response => {
         let rawData = response.data.data;
-
-        const normalizedData = rawData.map(p => {
+        // Data Normalization (Fix CWS, ATH, WAS, etc.)
+        const normalized = rawData.map(p => {
             let team = p.Team;
-            if (team === 'CHW') team = 'CWS'; // Fix White Sox
-            if (team === 'ATH') team = 'OAK'; // Fix Athletics
-            if (team === 'WAS') team = 'WSH'; // Fix Nationals
+            if (team === 'CHW') team = 'CWS'; 
+            if (team === 'ATH') team = 'OAK'; 
+            if (team === 'WAS') team = 'WSH'; 
             return { ...p, Team: team };
         });
-
-        setGlobalData(normalizedData);
-
-        if (!isGlobalFetchNeeded) {
-            setDisplayPitchers(normalizedData); 
-            setTotalPlayers(response.data.total);
-        }
-
+        setGlobalData(normalized);
         setLoading(false);
       })
       .catch(err => {
-        console.error("API error", err);
-        setLoading(false)
-      })
-    
-  }, [search, archetype, teamFilter, sortConfig, page, rowsPerPage, activeTab]) 
+        console.error("API Error:", err);
+        setLoading(false);
+      });
+  }, []); // Empty dependency array = Runs once on mount
 
-  // 3. CLIENT-SIDE FILTERING & PAGINATION
-  // This runs whenever globalData changes OR filters change.
-  useEffect(() => {
-    const isGlobalMode = (activeTab !== 'players') || (teamFilter !== 'All');
-    
-    if (isGlobalMode && globalData.length > 0) {
-        let filtered = [...globalData];
+  // --- DERIVED STATE (INSTANT FILTERING) ---
+  const filteredPitchers = useMemo(() => {
+    let data = [...globalData];
 
-        // 1. Filter by Team (Only for Players tab)
-        if (activeTab === 'players' && teamFilter !== 'All') {
-            filtered = filtered.filter(p => p.Team === teamFilter);
-        }
-
-        // 2. Filter by Search (Local)
-        if (search) {
-            filtered = filtered.filter(p => p.Name.toLowerCase().includes(search.toLowerCase()));
-        }
-
-        // 3. Filter by Archetype (Local)
-        if (archetype && archetype !== 'All Archetypes') {
-            filtered = filtered.filter(p => p.Archetype === archetype);
-        }
-
-        // 4. Sort (Local)
-        filtered.sort((a, b) => {
-            const valA = a[sortConfig.key] || 0;
-            const valB = b[sortConfig.key] || 0;
-            return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
-        });
-
-        // Update Total Count
-        if (activeTab === 'players') setTotalPlayers(filtered.length);
-
-        // 5. Pagination (Slice the data for display)
-        if (activeTab === 'players') {
-            const start = page * rowsPerPage;
-            const end = start + rowsPerPage;
-            setDisplayPitchers(filtered.slice(start, end));
-        } else {
-            // For Charts, send everything
-            setDisplayPitchers(filtered);
-        }
+    // 1. Team Filter
+    if (activeTab === 'players' && teamFilter !== 'All') {
+        data = data.filter(p => p.Team === teamFilter);
     }
-  }, [globalData, activeTab, teamFilter, search, archetype, sortConfig, page, rowsPerPage]);
-  
+
+    // 2. Search
+    if (search) {
+        data = data.filter(p => p.Name.toLowerCase().includes(search.toLowerCase()));
+    }
+
+    // 3. Archetype
+    if (archetype && archetype !== 'All Archetypes') {
+        data = data.filter(p => p.Archetype === archetype);
+    }
+
+    // 4. Sort
+    data.sort((a, b) => {
+        const valA = a[sortConfig.key] || 0;
+        const valB = b[sortConfig.key] || 0;
+        return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+    });
+
+    return data;
+  }, [globalData, activeTab, teamFilter, search, archetype, sortConfig]);
+
+  // --- PAGINATION SLICE ---
+  const displayPitchers = useMemo(() => {
+    // Only slice data for the 'players' list to keep DOM light
+    const start = page * rowsPerPage;
+    return filteredPitchers.slice(start, start + rowsPerPage);
+  }, [filteredPitchers, page, rowsPerPage]);
+
   // Reset page when filters change
-  useEffect(() => { setPage(0) }, [search, archetype, teamFilter])
+  useEffect(() => { setPage(0); }, [search, archetype, teamFilter]);
 
-  // Comparison Search (Debounced)
+  // Comparison Logic (Local Search)
   useEffect(() => {
-    if (!isCompareMode || !compareSearch) return
-    const delayDebounce = setTimeout(() => {
-      axios.get(`${API_BASE_URL}/pitchers`, { params: { search: compareSearch, limit: 5 } })
-        .then(res => setCompareResults(res.data))
-        .catch(console.error)
-    }, 300)
-    return () => clearTimeout(delayDebounce)
-  }, [compareSearch, isCompareMode])
+    if (!isCompareMode || !compareSearch) return;
+    const results = globalData.filter(p => p.Name.toLowerCase().includes(compareSearch.toLowerCase())).slice(0, 5);
+    setCompareResults(results);
+  }, [compareSearch, isCompareMode, globalData]);
 
-  // --- Handlers ---
-  const handleSort = useCallback((key) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
-    }))
-    setPage(0)
-  }, [])
-
-  const toggleCol = (col) => setVisibleCols(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
-  const selectAll = (category) => setVisibleCols(prev => [...new Set([...prev, ...COLUMN_CATEGORIES[category]])])
-  const deselectAll = (category) => setVisibleCols(prev => prev.filter(c => !COLUMN_CATEGORIES[category].includes(c)))
-
+  // Handlers
+  const handleSort = (key) => { 
+      setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' })); 
+      setPage(0); 
+  };
+  
+  const toggleCol = (col) => setVisibleCols(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+  const selectAll = (cat) => setVisibleCols(prev => [...new Set([...prev, ...COLUMN_CATEGORIES[cat]])]);
+  const deselectAll = (cat) => setVisibleCols(prev => prev.filter(c => !COLUMN_CATEGORIES[cat].includes(c)));
+  
   const handleCardClick = (player) => {
     if (selectedPlayer?.Name === player.Name) { setSelectedPlayer(null); return; }
-    setSelectedPlayer(player); setSimilarPlayers([])
-    axios.get(`${API_BASE_URL}/pitchers/${player.Name}/similar`)
-      .then(r => setSimilarPlayers(r.data))
-      .catch(console.error)
-  }
+    setSelectedPlayer(player); setSimilarPlayers([]);
+    axios.get(`${API_BASE_URL}/pitchers/${player.Name}/similar`).then(r => setSimilarPlayers(r.data)).catch(console.error);
+  };
 
   return (
     <div className="container">
@@ -657,7 +608,7 @@ function App() {
         <div className="header-top">
           <h1>⚾ MLB Pitcher Valuation 2025</h1>
           <div className="nav-tabs">
-            <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => setActiveTab('players')}>Player Cards</button>
+            <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => {setActiveTab('players'); setPage(0);}}>Player Cards</button>
             <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>
             <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
             <button className={`nav-tab ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => setActiveTab('lab')}>Pitch Lab 3D</button>
@@ -719,13 +670,13 @@ function App() {
                     handleSort={handleSort}
                     page={page} 
                     rowsPerPage={rowsPerPage} 
-                    totalPlayers={totalPlayers}
+                    totalPlayers={filteredPitchers.length}
                     handleChangePage={setPage} 
                     handleChangeRowsPerPage={(n) => { setRowsPerPage(n); setPage(0); }}
                 />
             )}
             
-            {/* Charts View now gets independent data in effect, but logic above handles it */}
+            {/* ChartsView gets ALL global data (normalized), ignoring team filter */}
             {activeTab === 'charts' && <ChartsView data={globalData} />}        
             {activeTab === 'network' && <SimilarityNetwork allPlayers={globalData} />}
 
@@ -734,7 +685,7 @@ function App() {
                 <div style={{ flex: 1, position: 'relative' }}>
                     <PitchLab 
                         player={selectedPlayer} 
-                        allPlayers={pitchers}
+                        allPlayers={globalData}
                         setPlayer={setSelectedPlayer}
                     />
                 </div>
