@@ -168,13 +168,6 @@ const SimilarityTable = ({ targetNode, neighbors, metrics, links }) => {
     )
 }
 
-// --- 3. NETWORK GRAPH COMPONENT ---
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-import axios from 'axios';
-
-// ... (Keep your PerformanceScatter and SimilarityTable components as they were) ...
-
 // --- 3. OPTIMIZED NETWORK GRAPH COMPONENT ---
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
