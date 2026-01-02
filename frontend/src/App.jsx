@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react'
 import axios from 'axios'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
-// Ensure these files exist in your project structure
 import { PitchLab } from './pitchLab';
 import { PerformanceScatter, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
@@ -37,64 +36,156 @@ const COLUMN_CATEGORIES = {
 
 const DEFAULT_COLS = ['WAR', 'kWAR', 'kWAR_Diff', 'ERA', 'WHIP', 'K%', 'Stuff+', 'SIERA'];
 
+// --- UPDATED METRIC DEFINITIONS (With Deep Dive Data) ---
 const METRIC_DEFINITIONS = {
   // --- BASIC STATS ---
-  'WAR': { name: 'Wins Above Replacement', desc: 'A comprehensive statistic that estimates the number of wins a player contributes to their team relative to a replacement-level player.' },
-  'kWAR': { name: 'Predictive WAR', desc: 'Our proprietary WAR model based purely on underlying component metrics (K%, BB%, Quality of Contact) rather than outcomes. A better predictor of future success.' },
-  'kWAR_Diff': { name: 'Value Gap', desc: 'The difference between standard WAR and kWAR. Positive numbers indicate a pitcher who is performing better than their surface results suggest (undervalued).' },
-  'ERA': { name: 'Earned Run Average', desc: 'The average number of earned runs a pitcher gives up for every nine innings pitched.' },
-  'WHIP': { name: 'Walks + Hits per IP', desc: 'Measures how many baserunners a pitcher allows per inning pitched. A gold standard for measuring stability.' },
-  'IP': { name: 'Innings Pitched', desc: 'The total number of innings a player has pitched.' },
-  'G': { name: 'Games', desc: 'Total appearances in a game.' },
-  'GS': { name: 'Games Started', desc: 'Total games where the pitcher threw the first pitch.' },
-  'W': { name: 'Wins', desc: 'Credited to the pitcher who is pitching when their team takes the lead and keeps it.' },
-  'L': { name: 'Losses', desc: 'Credited to the pitcher who allows the go-ahead run while their team is losing.' },
-  'SV': { name: 'Saves', desc: 'Awarded to a reliever who finishes a game for the winning team under specific narrow lead conditions.' },
-  'HLD': { name: 'Holds', desc: 'Awarded to a reliever who enters with a lead, gets at least one out, and does not relinquish the lead.' },
-  'K%': { name: 'Strikeout Percentage', desc: 'The percentage of total batters faced that resulted in a strikeout. Superior to K/9 as it accounts for walk rates.' },
-  'BB%': { name: 'Walk Percentage', desc: 'The percentage of total batters faced that resulted in a walk.' },
-  'K/9': { name: 'Strikeouts per 9', desc: 'Average strikeouts per 9 innings.' },
-  'BB/9': { name: 'Walks per 9', desc: 'Average walks per 9 innings.' },
-  'HR/9': { name: 'Home Runs per 9', desc: 'Average home runs allowed per 9 innings.' },
-  'BABIP': { name: 'Batting Avg on Balls in Play', desc: 'The batting average against a pitcher excluding strikeouts and home runs. High/Low values often indicate bad/good luck.' },
-  'LOB%': { name: 'Left On Base %', desc: 'The percentage of baserunners a pitcher strands on base without scoring.' },
+  'WAR': { 
+    name: 'Wins Above Replacement', 
+    desc: 'Estimates total value relative to a replacement-level player.',
+    calc: '[(FIP_Component - League_Avg) / Inning_Factor] + Role_Adj',
+    usage: 'The gold standard for comparing players across different roles and eras. Use it to evaluate overall season value.',
+    flaws: 'Ignores "Weak Contact" specialists. Pitchers who induce soft groundouts are often undervalued by FIP-based WAR.',
+    deepDive: 'WAR attempts to answer: "If this player got injured, how many wins would the team lose?" Replacement level is defined as a AAAA player readily available.'
+  },
+  'kWAR': { 
+    name: 'Predictive WAR', 
+    desc: 'Our proprietary model blending results with raw physical talent.',
+    calc: '(fWAR * 0.5) + (Stuff+ * 0.3) + (Location+ * 0.15) + (Role_Leverage * 0.05)',
+    usage: 'Use kWAR for talent evaluation, trade targets, and dynasty leagues. It tells you who SHOULD succeed.',
+    flaws: 'Currently overvalues high-leverage relievers because the leverage component can outweigh inning volume.',
+    deepDive: 'Standard WAR is retrospective. kWAR is predictive. By weighting Stuff+ and Location+, we account for pitchers who underperformed their talent due to poor defensive luck.'
+  },
+  'kWAR_Diff': { 
+    name: 'Value Gap', 
+    desc: 'The difference between kWAR and standard WAR.',
+    calc: 'kWAR - WAR',
+    usage: 'Positive values = undervalued pitcher (buy low). Negative values = overperformer due for regression (sell high).',
+    flaws: 'Can be misleading for pitchers transitioning roles (starter to reliever) or recovering from injury.',
+    deepDive: 'This is your edge-finder. A pitcher with +2.0 kWAR_Diff has elite underlying metrics but poor surface results—often due to bad BABIP luck or terrible defense.'
+  },
+  'ERA': { 
+    name: 'Earned Run Average', 
+    desc: 'Average earned runs allowed per 9 innings.',
+    calc: '(Earned_Runs * 9) / IP',
+    usage: 'Simple, traditional way to measure run prevention. Best used alongside other metrics, not in isolation.',
+    flaws: 'Heavily influenced by team defense, park factors, and luck.',
+    deepDive: 'ERA was king for decades, but modern analysis shows it\'s too noisy. Fielding-independent metrics (FIP, SIERA) often predict future ERA better than current ERA does.'
+  },
+  'WHIP': { 
+    name: 'Walks + Hits per IP', 
+    calc: '(BB + H) / IP',
+    desc: 'Measures baserunners allowed per inning.',
+    usage: 'Excellent for measuring consistency and limiting traffic. Sub-1.00 WHIP is elite; above 1.40 is concerning.',
+    flaws: 'Treats walks and hits equally, even though walks are more in a pitcher\'s control.',
+    deepDive: 'WHIP is beloved in fantasy baseball. However, a pitcher who allows lots of weak singles but no walks might have a worse WHIP than someone who strikes everyone out but walks 5 per game.'
+  },
+  'IP': { name: 'Innings Pitched', desc: 'Total innings thrown.', calc: 'Outs / 3', usage: 'Durability context.', flaws: 'Doesn\'t account for quality.', deepDive: '180+ IP is a workhorse.' },
+  'G': { name: 'Games', desc: 'Total appearances.', calc: 'Count of games', usage: 'Workload context.', flaws: 'One pitch counts as a game.', deepDive: 'Relievers appear 70+ times, starters ~33.' },
+  'GS': { name: 'Games Started', desc: 'Starts.', calc: 'First pitch thrown', usage: 'Role definition.', flaws: 'Openers complicate this.', deepDive: 'Modern usage blurs starter/reliever lines.' },
+  'W': { name: 'Wins', desc: 'Pitcher of record for win.', calc: 'Scorer decision', usage: 'Historical curiosity.', flaws: 'Dependent on offense/bullpen.', deepDive: 'Largely ignored in modern analysis due to noise.' },
+  'L': { name: 'Losses', desc: 'Pitcher of record for loss.', calc: 'Scorer decision', usage: 'None.', flaws: 'Context dependent.', deepDive: 'Felix Hernandez won Cy Young with 13-12 record.' },
+  'SV': { name: 'Saves', desc: 'Reliever preserves win.', calc: 'Specific lead rules', usage: 'Fantasy value.', flaws: 'Arbitrary rules.', deepDive: 'Overvalues 9th inning usage over leverage.' },
+  'HLD': { name: 'Holds', desc: 'Reliever preserves lead.', calc: 'Lead preserved, no save', usage: 'Setup value.', flaws: 'Situation dependent.', deepDive: 'Good for finding setup men.' },
+  'K%': { 
+    name: 'Strikeout Percentage', 
+    desc: 'Percentage of batters faced that struck out.',
+    calc: 'K / PA',
+    usage: 'Elite: 28%+. Average: 20-22%. The most "sticky" skill—high K% pitchers stay good.',
+    flaws: 'Doesn\'t account for situational timing.',
+    deepDive: 'K% is the single most predictive pitching stat. Strikeouts can\'t be affected by defense, park, or luck.'
+  },
+  'BB%': { 
+    name: 'Walk Percentage', 
+    desc: 'Percentage of batters faced that walked.',
+    calc: 'BB / PA',
+    usage: 'Elite: <6%. Average: 8-9%. Concerning: >11%. Control is crucial.',
+    flaws: 'Includes intentional walks.',
+    deepDive: 'Walk rate is highly stable. Unlike hits allowed, walks are 100% in the pitcher\'s control.'
+  },
+  'K/9': { name: 'Strikeouts per 9', desc: 'Ks per 9 innings.', calc: 'K*9/IP', usage: 'Traditional.', flaws: 'Inflated by walks.', deepDive: 'Use K% instead.' },
+  'BB/9': { name: 'Walks per 9', desc: 'Walks per 9 innings.', calc: 'BB*9/IP', usage: 'Traditional.', flaws: 'Use BB% instead.', deepDive: 'Legacy stat.' },
+  'HR/9': { name: 'Home Runs per 9', desc: 'HRs allowed per 9.', calc: 'HR*9/IP', usage: 'HR prevention.', flaws: 'Volatile year-to-year.', deepDive: 'HR rates fluctuate wildly based on luck and parks.' },
+  'BABIP': { 
+    name: 'Batting Avg on Balls in Play', 
+    desc: 'Batting average on non-HR, non-K balls in play.',
+    calc: '(H - HR) / (AB - K - HR + SF)',
+    usage: 'League avg ~.300. High/Low indicates luck.',
+    flaws: 'Some pitchers (knuckleballers) sustain low BABIPs.',
+    deepDive: 'BABIP is a luck indicator. A .350 BABIP suggests bad luck/defense; .250 suggests good luck.'
+  },
+  'LOB%': { name: 'Left On Base %', desc: '% of runners stranded.', calc: 'Formula based on H/BB/R', usage: 'Luck indicator.', flaws: 'Regresses to ~72%.', deepDive: 'High LOB% usually isn\'t sustainable.' },
 
   // --- ADVANCED STATS ---
-  'SIERA': { name: 'Skill-Interactive ERA', desc: 'Estimates ERA by focusing on balls in play and strikeout rates. Generally considered the most accurate predictive ERA estimator.' },
-  'FIP': { name: 'Fielding Independent Pitching', desc: 'Estimates what a pitcher\'s ERA would be if they experienced league average defense and luck.' },
-  'xFIP': { name: 'Expected FIP', desc: 'Similar to FIP, but normalizes the pitcher\'s Home Run to Fly Ball ratio to the league average.' },
-  'Stuff+': { name: 'Stuff Plus', desc: 'Grades the physical characteristics of a pitch (velo, movement, release). 100 is league average.' },
-  'Location+': { name: 'Location Plus', desc: 'Grades the pitcher\'s ability to put the ball in advantageous zones. 100 is league average.' },
-  'Pitching+': { name: 'Pitching Plus', desc: 'A combination of Stuff+ and Location+ to grade overall process. 100 is league average.' },
-  'BotStf': { name: 'Robot Stuff Grade', desc: 'Automated 20-80 scouting scale assessment of raw stuff.' },
-  'BotCmd': { name: 'Robot Command Grade', desc: 'Automated 20-80 scouting scale assessment of command.' },
-  'BotOvr': { name: 'Robot Overall', desc: 'Overall automated scouting grade (20-80 scale).' },
-  'vFA (sc)': { name: 'Fastball Velocity', desc: 'Average velocity of the fastball.' },
-  'vSL (sc)': { name: 'Slider Velocity', desc: 'Average velocity of the slider.' },
-  'vCU (sc)': { name: 'Curveball Velocity', desc: 'Average velocity of the curveball.' },
-  'vCH (sc)': { name: 'Changeup Velocity', desc: 'Average velocity of the changeup.' },
-  'SwStr%': { name: 'Swinging Strike %', desc: 'The percentage of total pitches that induce a swing and a miss.' },
-  'CSW%': { name: 'Called + Swinging Strike %', desc: 'The percentage of pitches that are either called strikes or swinging strikes. Correlates highly with K%.' },
-  'HardHit%': { name: 'Hard Hit Rate', desc: 'Percentage of batted balls hit with an exit velocity of 95 mph or higher.' },
-  'Barrel%': { name: 'Barrel Rate', desc: 'Percentage of batted balls with the perfect combination of exit velocity and launch angle.' },
-  'GB%': { name: 'Ground Ball %', desc: 'Percentage of batted balls that are grounders.' },
-  'LD%': { name: 'Line Drive %', desc: 'Percentage of batted balls that are line drives.' },
-  'FB%': { name: 'Fly Ball %', desc: 'Percentage of batted balls that are fly balls.' },
-  'O-Swing%': { name: 'Chase Rate', desc: 'Percentage of pitches outside the zone that the batter swung at.' },
-  'Z-Swing%': { name: 'Zone Swing Rate', desc: 'Percentage of pitches inside the zone that the batter swung at.' },
-  'Contact%': { name: 'Contact Rate', desc: 'Percentage of swings that resulted in contact.' },
-  'Zone%': { name: 'Zone Rate', desc: 'Percentage of total pitches thrown inside the strike zone.' },
-  'WPA': { name: 'Win Probability Added', desc: 'The change in win probability caused by the pitcher\'s performance.' },
-  'RE24': { name: 'Run Expectancy 24', desc: 'Runs saved compared to an average pitcher based on the base/out state.' },
-  'gmLI': { name: 'Game Leverage Index', desc: 'Measures the pressure of the situations the pitcher faced. 1.0 is average pressure.' },
-  'Clutch': { name: 'Clutch Score', desc: 'How much better the pitcher performed in high leverage spots vs neutral spots.' },
-  'SD': { name: 'Standard Deviation', desc: 'Statistical variance in performance.' },
-  'MD': { name: 'Median Deviation', desc: 'Median variance in performance.' }
+  'SIERA': { 
+    name: 'Skill-Interactive ERA', 
+    desc: 'ERA estimator focusing on balls in play and strikeout rates.',
+    calc: 'Complex formula (K, BB, GB interaction)',
+    usage: 'Best ERA predictor available. Use for dynasty/keeper leagues.',
+    flaws: 'Black box formula.',
+    deepDive: 'Accounts for the interaction between K, BB, and batted ball types. Predicts future ERA better than current ERA.'
+  },
+  'FIP': { 
+    name: 'Fielding Independent Pitching', 
+    desc: 'ERA based only on K, BB, HBP, HR.',
+    calc: '((13*HR + 3*BB - 2*K) / IP) + C',
+    usage: 'Strip away defense and luck. Elite: <3.00.',
+    flaws: 'Ignores batted ball quality.',
+    deepDive: 'FIP asks: "What SHOULD this pitcher\'s ERA be based on the outcomes they control?"'
+  },
+  'xFIP': { name: 'Expected FIP', desc: 'FIP with normalized HR rate.', calc: 'FIP with league avg HR/FB%', usage: 'Better for small samples.', flaws: 'Assumes avg HR/FB is skill-neutral.', deepDive: 'Corrects for HR luck.' },
+  'Stuff+': { 
+    name: 'Stuff Plus', 
+    desc: 'Grades raw pitch quality: velocity, movement, spin.',
+    calc: 'Velocity + Movement + Spin vs Avg',
+    usage: '100 = Avg. 110+ = Elite. Predictive of K%.',
+    flaws: 'Ignores deception/sequencing.',
+    deepDive: 'Stuff+ measures physical characteristics. It tells you "raw talent" in a vacuum.'
+  },
+  'Location+': { name: 'Location Plus', desc: 'Grades command.', calc: 'Pitch location vs intent targets', usage: '100 = Avg. Measures execution.', flaws: 'Can be gamed by nibbling.', deepDive: 'Did you hit your spot? Elite pitchers live on the edges.' },
+  'Pitching+': { name: 'Pitching Plus', desc: 'Stuff+ and Location+ combined.', calc: 'Weighted blend', usage: 'Overall process grade.', flaws: 'Weighting balance.', deepDive: 'Answers: "How good is the overall process?"' },
+  'BotStf': { name: 'Robot Stuff', desc: '20-80 scale stuff grade.', calc: 'AI Scout Model', usage: 'Scouting scale.', flaws: 'Black box.', deepDive: 'Replicates a scout\'s grade using data.' },
+  'BotCmd': { name: 'Robot Command', desc: '20-80 scale command grade.', calc: 'AI Scout Model', usage: 'Scouting scale.', flaws: 'Black box.', deepDive: 'Measures repeatability and precision.' },
+  'BotOvr': { name: 'Robot Overall', desc: '20-80 overall grade.', calc: 'AI Scout Model', usage: 'Future value.', flaws: 'Compresses variance.', deepDive: 'The "ceiling" grade.' },
+  'vFA (sc)': { name: 'Fastball Velo', desc: 'Avg FB velocity.', calc: 'Mean MPH', usage: 'Velo is sticky.', flaws: 'Ignores movement.', deepDive: 'Every 1mph adds ~0.5% SwStr%.' },
+  'vSL (sc)': { name: 'Slider Velo', desc: 'Avg SL velocity.', calc: 'Mean MPH', usage: 'Pair with movement.', flaws: 'Velo alone incomplete.', deepDive: 'Hard sliders vs Sweepers.' },
+  'vCU (sc)': { name: 'Curve Velo', desc: 'Avg CU velocity.', calc: 'Mean MPH', usage: 'Pair with depth.', flaws: 'Shape matters more.', deepDive: 'Power curves vs Loopers.' },
+  'vCH (sc)': { name: 'Change Velo', desc: 'Avg CH velocity.', calc: 'Mean MPH', usage: 'Gap off FB matters.', flaws: 'Needs FB context.', deepDive: 'Ideal gap is 8-12mph.' },
+  'SwStr%': { 
+    name: 'Swinging Strike %', 
+    desc: 'Percentage of pitches inducing swings and misses.',
+    calc: 'Whiffs / Total Pitches',
+    usage: 'Elite: 13%+. Direct K% predictor.',
+    flaws: 'Doesn\'t distinguish chase vs zone.',
+    deepDive: 'The purest "stuff" indicator. A drop usually signals injury.'
+  },
+  'CSW%': { name: 'Called + Swinging Strike %', desc: 'Total strikes generated.', calc: '(Called + Whiff) / Pitches', usage: 'Elite: 30%+. Strike generation.', flaws: 'Umpire dependent.', deepDive: 'Combines stuff (whiffs) and command (called).' },
+  'HardHit%': { name: 'Hard Hit Rate', desc: '% batted balls 95mph+.', calc: 'Hard / BBE', usage: 'Predicts ERA.', flaws: 'Statcast required.', deepDive: 'Quality of contact stat. Hard hits find holes.' },
+  'Barrel%': { name: 'Barrel Rate', desc: 'Ideal Velo + Angle.', calc: 'Barrels / BBE', usage: 'Elite <5%.', flaws: 'Small sample noise.', deepDive: 'Barrels = .500 AVG / 1.500 SLG. The worst outcome.' },
+  'GB%': { name: 'Ground Ball %', desc: '% grounders.', calc: 'GB / BBE', usage: '50%+ is elite GB.', flaws: 'Ignores exit velo.', deepDive: 'Sinkerballers trade Ks for GBs.' },
+  'LD%': { name: 'Line Drive %', desc: '% line drives.', calc: 'LD / BBE', usage: 'Avoid at all cost.', flaws: 'Noisy year-to-year.', deepDive: 'LDs fall for hits ~70% of the time.' },
+  'FB%': { name: 'Fly Ball %', desc: '% fly balls.', calc: 'FB / BBE', usage: 'Context dependent.', flaws: 'Ignores popups.', deepDive: 'Risk of HRs, but also popups.' },
+  'O-Swing%': { name: 'Chase Rate', desc: 'Swings at balls.', calc: 'O-Swing / O-Pitches', usage: 'Deception indicator.', flaws: 'Can lead to walks.', deepDive: 'Tunneling creates chases.' },
+  'Z-Swing%': { name: 'Zone Swing Rate', desc: 'Swings at strikes.', calc: 'Z-Swing / Z-Pitches', usage: 'Aggression.', flaws: 'Context dependent.', deepDive: 'Low Z-Swing suggests freezing hitters.' },
+  'Contact%': { name: 'Contact Rate', desc: 'Contact / Swing.', calc: '1 - Whiff/Swing', usage: 'Lower is better.', flaws: 'Weak contact?', deepDive: 'Inverse of whiffs.' },
+  'Zone%': { name: 'Zone Rate', desc: 'Pitches in zone.', calc: 'In-Zone / Total', usage: '42-46% optimal.', flaws: 'Effective zone differs.', deepDive: 'Too high = hittable. Too low = walks.' },
+  'WPA': { 
+    name: 'Win Probability Added', 
+    desc: 'Change in win probability caused by pitcher.', 
+    calc: 'Sum of ΔWinProb', 
+    usage: 'Tells the story of the game.', 
+    flaws: 'Context dependent, not predictive.', 
+    deepDive: 'Great for "Clutch" narratives, bad for predicting future talent.' 
+  },
+  'RE24': { name: 'Run Expectancy 24', desc: 'Runs saved vs avg based on base/out state.', calc: 'ΔRunExp', usage: 'Situational value.', flaws: 'Context heavy.', deepDive: 'Awards credit for getting out of jams.' },
+  'gmLI': { name: 'Leverage Index', desc: 'Pressure of situations faced.', calc: 'Avg Leverage', usage: 'Reliever usage.', flaws: 'Manager dependent.', deepDive: '1.0 is avg. Closers often 1.8+.' },
+  'Clutch': { name: 'Clutch', desc: 'Performance in high lev vs neutral.', calc: 'WPA / LI diff', usage: 'Narrative.', flaws: 'Not a sticky skill.', deepDive: 'Most "clutch" stats are just noise.' },
+  'SD': { name: 'Standard Deviation', desc: 'Variance in performance.', calc: 'Statistical StdDev', usage: 'Consistency.', flaws: 'None.', deepDive: 'Measures "Boom or Bust".' },
+  'MD': { name: 'Median Deviation', desc: 'Median variance.', calc: 'Median Diff', usage: 'Consistency.', flaws: 'None.', deepDive: 'More robust consistency metric.' }
 };
 
-// --- HELPER COMPONENTS ---
+// --- HELPER COMPONENTS (Memoized for Performance) ---
 
-const PlayerHeadshot = ({ mlbId, size = 'large' }) => {
+const PlayerHeadshot = memo(({ mlbId, size = 'large' }) => {
   const url = mlbId 
     ? `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${mlbId}/headshot/67/current`
     : 'https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/generic/headshot/67/current';
@@ -104,15 +195,15 @@ const PlayerHeadshot = ({ mlbId, size = 'large' }) => {
       <img loading="lazy" src={url} alt="Player" className="headshot-img" onError={(e) => {e.target.src = 'https://midfield.mlbstatic.com/v1/people/0/headshot/67/current'}} />
     </div>
   )
-}
+});
 
-const TeamLogo = ({ team }) => {
+const TeamLogo = memo(({ team }) => {
   let code = team ? TEAM_LOGOS[team] || team.toLowerCase() : 'mlb';
   if (code === 'was') code = 'wsh'; 
   return <img loading="lazy" src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/mlb/500/${code}.png&w=100&h=100`} alt={team} className="team-logo" onError={(e) => e.target.style.display = 'none'} />
-}
+});
 
-const PercentileBar = ({ label, value, percentile, suffix = '' }) => {
+const PercentileBar = memo(({ label, value, percentile, suffix = '' }) => {
   const hue = (100 - (percentile || 50)) * 2.4
   const color = `hsl(${hue}, 85%, 50%)`
   return (
@@ -121,21 +212,61 @@ const PercentileBar = ({ label, value, percentile, suffix = '' }) => {
       <div className="progress-bg"><div className="progress-fill" style={{ width: `${percentile}%`, backgroundColor: color }}></div></div>
     </div>
   )
-}
+});
+
+// Extracted out of PlayerListView to prevent re-creation on every render
+const PitchArsenal = memo(({ player }) => {
+    const [expanded, setExpanded] = useState(false)
+    const [hoveredPitch, setHoveredPitch] = useState(null)
+    const pitchConfig = [{ code: 'FA', name: 'Fastball', color: '#d946ef' }, { code: 'FC', name: 'Cutter', color: '#9333ea' }, { code: 'CT', name: 'Cutter', color: '#9333ea' }, { code: 'SI', name: 'Sinker', color: '#e879f9' }, { code: 'SL', name: 'Slider', color: '#f59e0b' }, { code: 'CU', name: 'Curve', color: '#06b6d4' }, { code: 'CH', name: 'Change', color: '#10b981' }, { code: 'FS', name: 'Splitter', color: '#3b82f6' }]
+    
+    // UseMemo here prevents array sorting on every render if player obj ref hasn't changed
+    const arsenal = useMemo(() => {
+        return pitchConfig.map(p => ({ ...p, usage: player[`u${p.code}`] || 0, velo: player[`v${p.code}`] || 0, spin: player[`s${p.code}`] || 0 })).filter(p => p.usage * 100 > 5).sort((a, b) => b.usage - a.usage)
+    }, [player]);
+
+    if (arsenal.length === 0) return <div className="no-pitch-data">No Data</div>
+    
+    return (
+      <div className="arsenal-container">
+        <div className="arsenal-badges">
+          {arsenal.map(p => (
+              <div key={p.code} className="pitch-badge-wrapper" onMouseEnter={() => setHoveredPitch(p)} onMouseLeave={() => setHoveredPitch(null)} onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}>
+                  <span className="pitch-badge interactable" style={{ border: `1px solid ${p.color}`, color: p.color, backgroundColor: hoveredPitch?.code === p.code ? 'rgba(255,255,255,0.1)' : 'transparent' }}>{p.code === 'CT' ? 'FC' : p.code}</span>
+                  {!expanded && hoveredPitch?.code === p.code && <div className="mini-tooltip" style={{ borderColor: p.color }}><strong>{p.velo.toFixed(1)}</strong> <small>mph</small></div>}
+              </div>
+            ))}
+        </div>
+        {expanded && (
+            <div className="arsenal-dropdown" onClick={e => e.stopPropagation()}>
+                <table><thead><tr><th>Pitch</th><th>Use</th><th>Velo</th>{arsenal.some(x => x.spin > 0) && <th>Spin</th>}</tr></thead>
+                <tbody>{arsenal.map(p => (<tr key={p.code} style={{color: p.color}}><td>{p.name}</td><td>{(p.usage * 100).toFixed(0)}%</td><td>{p.velo.toFixed(1)}</td>{arsenal.some(x => x.spin > 0) && <td>{p.spin > 0 ? p.spin.toFixed(0) : '-'}</td>}</tr>))}</tbody></table>
+            </div>
+        )}
+      </div>
+    )
+})
 
 // --- SUB-VIEWS ---
 
 const GlossaryView = () => {
+  const [activeMetric, setActiveMetric] = useState(null);
+
   const categories = useMemo(() => [
     { title: 'Basic Metrics', keys: COLUMN_CATEGORIES.basic },
     { title: 'Advanced Sabermetrics', keys: COLUMN_CATEGORIES.advanced }
   ], []);
 
+  const openDeepDive = (key) => {
+    const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'Standard statistical metric.' };
+    setActiveMetric({ key, ...def });
+  };
+
   return (
     <div className="glossary-container fade-in">
       <div className="glossary-header">
         <h2>Statistical Glossary</h2>
-        <p>Understanding the metrics that drive modern pitcher evaluation.</p>
+        <p>Click any card for a deep dive analysis.</p>
       </div>
 
       {categories.map(cat => (
@@ -145,19 +276,63 @@ const GlossaryView = () => {
             {cat.keys.map(key => {
               const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'Standard statistical metric.' };
               return (
-                <div key={key} className="glossary-card">
+                <div key={key} className="glossary-card interactable" onClick={() => openDeepDive(key)}>
                   <div className="card-top">
                     <strong>{key}</strong>
                     {['kWAR', 'Stuff+', 'SIERA'].includes(key) && <span className="key-badge">KEY</span>}
                   </div>
                   <div className="card-name">{def.name}</div>
                   <p>{def.desc}</p>
+                  <div className="click-hint">Click for Deep Dive ↘</div>
                 </div>
               )
             })}
           </div>
         </div>
       ))}
+
+      {/* DEEP DIVE MODAL */}
+      {activeMetric && (
+        <div className="modal-overlay" onClick={() => setActiveMetric(null)}>
+            <div className="modal-content deep-dive-modal" onClick={e => e.stopPropagation()}>
+                <div className="deep-dive-header">
+                    <h2>{activeMetric.key}</h2>
+                    <span className="subtitle">{activeMetric.name}</span>
+                </div>
+                
+                <div className="deep-dive-body">
+                    <div className="dd-section definition">
+                        <h4>Definition</h4>
+                        <p>{activeMetric.desc}</p>
+                    </div>
+
+                    {activeMetric.calc && (
+                        <div className="dd-section formula">
+                            <h4>Calculation</h4>
+                            <code>{activeMetric.calc}</code>
+                        </div>
+                    )}
+
+                    <div className="dd-grid">
+                        <div className="dd-card usage">
+                            <h4>Usage</h4>
+                            <p>{activeMetric.usage || "General evaluation."}</p>
+                        </div>
+                        <div className="dd-card flaws">
+                            <h4>Flaws</h4>
+                            <p>{activeMetric.flaws || "None specifically noted."}</p>
+                        </div>
+                    </div>
+
+                    <div className="dd-section analysis">
+                        <h4>Analyst's Take</h4>
+                        <p>{activeMetric.deepDive || "No deep dive analysis available for this metric."}</p>
+                    </div>
+                </div>
+                <button className="close-btn" onClick={() => setActiveMetric(null)}>Close</button>
+            </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -170,7 +345,7 @@ const PlayerListView = ({
   handleChangePage, handleChangeRowsPerPage 
 }) => {
   
-  const formatCell = (player, col) => {
+  const formatCell = useCallback((player, col) => {
     let val = player[col];
     if (val === undefined || val === null) return '-';
     if (['K%', 'BB%', 'GB%', 'LD%', 'FB%', 'SwStr%', 'CSW%', 'HardHit%', 'LOB%'].includes(col)) return (val * 100).toFixed(1) + '%';
@@ -178,33 +353,16 @@ const PlayerListView = ({
     if (col.includes('v') && col.includes('(sc)')) return val.toFixed(1);
     if (col === 'kWAR_Diff') return (val > 0 ? '+' : '') + val;
     return val;
-  }
+  }, []);
 
   const getSortIcon = (col) => {
     if (sortConfig.key !== col) return <span className="sort-icon opacity-30">↕</span>;
     return sortConfig.direction === 'asc' ? <span className="sort-icon active">↑</span> : <span className="sort-icon active">↓</span>;
   }
 
-  const PitchArsenal = ({ player }) => {
-      const [expanded, setExpanded] = useState(false)
-      const [hoveredPitch, setHoveredPitch] = useState(null)
-      const pitchConfig = [{ code: 'FA', name: 'Fastball', color: '#d946ef' }, { code: 'FC', name: 'Cutter', color: '#9333ea' }, { code: 'CT', name: 'Cutter', color: '#9333ea' }, { code: 'SI', name: 'Sinker', color: '#e879f9' }, { code: 'SL', name: 'Slider', color: '#f59e0b' }, { code: 'CU', name: 'Curve', color: '#06b6d4' }, { code: 'CH', name: 'Change', color: '#10b981' }, { code: 'FS', name: 'Splitter', color: '#3b82f6' }]
-      const arsenal = pitchConfig.map(p => ({ ...p, usage: player[`u${p.code}`] || 0, velo: player[`v${p.code}`] || 0, spin: player[`s${p.code}`] || 0 })).filter(p => p.usage * 100 > 5).sort((a, b) => b.usage - a.usage)
-      if (arsenal.length === 0) return <div className="no-pitch-data">No Data</div>
-      return (
-        <div className="arsenal-container">
-          <div className="arsenal-badges">
-            {arsenal.map(p => (<div key={p.code} className="pitch-badge-wrapper" onMouseEnter={() => setHoveredPitch(p)} onMouseLeave={() => setHoveredPitch(null)} onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}><span className="pitch-badge interactable" style={{ border: `1px solid ${p.color}`, color: p.color, backgroundColor: hoveredPitch?.code === p.code ? 'rgba(255,255,255,0.1)' : 'transparent' }}>{p.code === 'CT' ? 'FC' : p.code}</span>{!expanded && hoveredPitch?.code === p.code && <div className="mini-tooltip" style={{ borderColor: p.color }}><strong>{p.velo.toFixed(1)}</strong> <small>mph</small></div>}</div>))}
-          </div>
-          {expanded && (<div className="arsenal-dropdown" onClick={e => e.stopPropagation()}><table><thead><tr><th>Pitch</th><th>Use</th><th>Velo</th>{arsenal.some(x => x.spin > 0) && <th>Spin</th>}</tr></thead><tbody>{arsenal.map(p => (<tr key={p.code} style={{color: p.color}}><td>{p.name}</td><td>{(p.usage * 100).toFixed(0)}%</td><td>{p.velo.toFixed(1)}</td>{arsenal.some(x => x.spin > 0) && <td>{p.spin > 0 ? p.spin.toFixed(0) : '-'}</td>}</tr>))}</tbody></table></div>)}
-        </div>
-      )
-  }
-
   return (
     <div className="fade-in">
       <div className="sub-controls">
-        {/* NEW SEGMENTED CONTROL BUTTONS */}
         <div className="view-toggle-group">
           <button className={`toggle-option ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')} aria-label="Grid View">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
@@ -327,6 +485,12 @@ function App() {
 
   // Main Data Fetch
   useEffect(() => {
+    // Optimization: Don't fetch player list if we are just looking at Glossary
+    if (activeTab === 'info') {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true)
     const params = { 
       sort_by: sortConfig.key,
@@ -335,20 +499,13 @@ function App() {
       skip: page * rowsPerPage
     }
     
-    // Clean inputs before sending
     if (search && search.trim()) params.search = search.trim();
     if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
 
     // Fetch all players for Charts/Lab view (no pagination)
-    if (activeTab !== 'players' && activeTab !== 'info') {
+    if (activeTab !== 'players') {
         params.limit = 1000; 
         params.skip = 0;
-    }
-
-    // Skip fetch for Info tab
-    if (activeTab === 'info') {
-        setLoading(false);
-        return;
     }
 
     axios.get(`${API_BASE_URL}/pitchers`, { params })
@@ -378,14 +535,13 @@ function App() {
   }, [compareSearch, isCompareMode])
 
   // --- Handlers ---
-  const handleSort = (key) => {
-    let direction = 'desc'
-    if (sortConfig.key === key && sortConfig.direction === 'desc') {
-      direction = 'asc'
-    }
-    setSortConfig({ key, direction })
+  const handleSort = useCallback((key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+    }))
     setPage(0)
-  }
+  }, [])
 
   const toggleCol = (col) => setVisibleCols(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
   const selectAll = (category) => setVisibleCols(prev => [...new Set([...prev, ...COLUMN_CATEGORIES[category]])])
