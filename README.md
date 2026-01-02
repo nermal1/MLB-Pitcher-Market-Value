@@ -1,5 +1,7 @@
 # MLB Pitcher Valuation 2025
 
+website link https://mlb-pitcher-market-value-e2snajh8g-chances-projects-d5c99157.vercel.app
+
 ## Project Overview
 This project is a sophisticated full-stack analytics application designed to modernize how Major League Baseball pitchers are evaluated. It moves beyond traditional box score statistics to visualize player value, market inefficiencies, and statistical similarity through a proprietary metric called **kWAR**, an interactive **Similarity Network Engine**, and a **3D Biomechanical Pitch Lab**.
 
