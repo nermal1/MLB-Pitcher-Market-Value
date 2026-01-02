@@ -4,7 +4,7 @@ import './App.css'
 
 // --- COMPONENT IMPORTS ---
 import { PitchLab } from './pitchLab';
-import { PerformanceScatter, SimilarityNetwork } from './ChartsView';
+import { ChartsView, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
 
 // --- CONSTANTS & CONFIGURATION ---
@@ -513,6 +513,9 @@ function App() {
   const [compareSearch, setCompareSearch] = useState('')
   const [compareResults, setCompareResults] = useState([])
 
+  const [teamFilter, setTeamFilter] = useState('All');
+  const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
+
   // Initial Fetch: Archetypes
   useEffect(() => {
     axios.get(`${API_BASE_URL}/archetypes`)
@@ -538,6 +541,7 @@ function App() {
     
     if (search && search.trim()) params.search = search.trim();
     if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
+    if (teamFilter && teamFilter !== 'All') params.team = teamFilter;
 
     // Fetch all players for Charts/Lab view (no pagination)
     if (activeTab !== 'players') {
@@ -555,10 +559,10 @@ function App() {
         console.error("API Error:", err);
         setLoading(false);
       })
-  }, [search, archetype, sortConfig, page, rowsPerPage, activeTab]) 
+  }, [search, archetype, teamFilter, sortConfig, page, rowsPerPage, activeTab]) 
 
   // Reset page when filters change
-  useEffect(() => { setPage(0) }, [search, archetype])
+  useEffect(() => { setPage(0) }, [search, archetype, teamFilter])
 
   // Comparison Search (Debounced)
   useEffect(() => {
@@ -599,8 +603,7 @@ function App() {
           <h1>⚾ MLB Pitcher Valuation 2025</h1>
           <div className="nav-tabs">
             <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => setActiveTab('players')}>Player Cards</button>
-            <button className={`nav-tab ${activeTab === 'scatter' ? 'active' : ''}`} onClick={() => setActiveTab('scatter')}>Scatter Plots</button>
-            <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
+            <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>            <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
             <button className={`nav-tab ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => setActiveTab('lab')}>Pitch Lab 3D</button>
             <button className={`nav-tab ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Info & Glossary</button>
           </div>
@@ -612,6 +615,10 @@ function App() {
             <select value={archetype} onChange={e => setArchetype(e.target.value)}>
               <option value="">All Archetypes</option>
               {archetypeList.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}>
+              <option value="All">All Teams</option>
+              {teamList.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             {viewMode === 'grid' && (
                 <select value={sortConfig.key} onChange={e => handleSort(e.target.value)}>
@@ -659,7 +666,7 @@ function App() {
                 />
             )}
             
-            {activeTab === 'scatter' && <PerformanceScatter data={pitchers} />}        
+            {activeTab === 'scatter' && <ChartsView data={pitchers} />}        
             {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
 
             {activeTab === 'lab' && (
