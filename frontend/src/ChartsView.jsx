@@ -145,8 +145,9 @@ const ScatterView = ({ data }) => {
           <span className="legend-item"><span className="dot red"></span> Overvalued</span>
       </div>
 
-      <div className="scatter-wrapper">
-        <ResponsiveContainer width="100%" height={600}>
+      {/* Explicit Height for ResponsiveContainer to work */}
+      <div className="scatter-wrapper" style={{ height: '600px', width: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
             <XAxis type="number" dataKey={xMetric} name={xMetric} domain={['auto', 'auto']} stroke="#94a3b8">
@@ -195,8 +196,9 @@ const TeamBarView = ({ data }) => {
         </div>
       </div>
 
-      <div className="scatter-wrapper">
-        <ResponsiveContainer width="100%" height={600}>
+      {/* Explicit Height for ResponsiveContainer to work */}
+      <div className="scatter-wrapper" style={{ height: '600px', width: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
             <XAxis dataKey="Team" stroke="#94a3b8" angle={-45} textAnchor="end" interval={0} height={60} />
@@ -261,20 +263,23 @@ export const ChartsView = ({ data }) => {
   const [activeChart, setActiveChart] = useState('scatter');
 
   return (
-    <div className="charts-view-container fade-in">
+    <div className="charts-view-container fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="charts-nav">
         <button className={`chart-tab ${activeChart === 'scatter' ? 'active' : ''}`} onClick={() => setActiveChart('scatter')}>Scatter Plots (Individual)</button>
         <button className={`chart-tab ${activeChart === 'team' ? 'active' : ''}`} onClick={() => setActiveChart('team')}>Team Comparison (Roster Analysis)</button>
       </div>
       
-      {activeChart === 'scatter' ? <ScatterView data={data} /> : <TeamBarView data={data} />}
+      {/* Container for the specific chart view */}
+      <div style={{ flex: 1, minHeight: '600px' }}>
+        {activeChart === 'scatter' ? <ScatterView data={data} /> : <TeamBarView data={data} />}
+      </div>
     </div>
   );
 };
 
 
 // ==========================================
-// 5. EXPORT: SIMILARITY NETWORK (For use in App.js tab)
+// 5. EXPORT: SIMILARITY NETWORK
 // ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();

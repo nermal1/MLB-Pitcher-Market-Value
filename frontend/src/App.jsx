@@ -3,6 +3,7 @@ import axios from 'axios'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
+// Ensure these files exist in your project structure
 import { PitchLab } from './pitchLab';
 import { ChartsView, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
@@ -36,7 +37,7 @@ const COLUMN_CATEGORIES = {
 
 const DEFAULT_COLS = ['WAR', 'kWAR', 'kWAR_Diff', 'ERA', 'WHIP', 'K%', 'Stuff+', 'SIERA'];
 
-// --- UPDATED METRIC DEFINITIONS (With Deep Dive Data) ---
+// --- METRIC DEFINITIONS ---
 const METRIC_DEFINITIONS = {
   // --- BASIC STATS ---
   'WAR': { 
@@ -49,7 +50,7 @@ const METRIC_DEFINITIONS = {
   },
   'kWAR': { 
     name: 'Predictive WAR', 
-    desc: 'A proprietary metric that fixes WAR\'s blind spots by rewarding weak-contact management and high-leverage relief performance.',     calc: '(fWAR * 0.5) + (Stuff+ * 0.3) + (Location+ * 0.15) + (Role_Leverage * 0.05)',
+    desc: 'A proprietary metric that fixes WAR\'s blind spots by rewarding weak-contact management and high-leverage relief performance.',
     calc: 'Starter: WAR + [(FIP - SIERA) * IP_Factor]\nReliever: (WAR + Skill_Adj) * Leverage_Multiplier',
     usage: 'The primary ranking metric for this project. It allows for a fair comparison between workhorse Starters and elite "Firemen" Closers.',
     flaws: 'Heavily reliant on SIERA accuracy. Can be volatile for relievers with small sample sizes where gmLI fluctuates wildly.',
@@ -183,7 +184,7 @@ const METRIC_DEFINITIONS = {
   'MD': { name: 'Median Deviation', desc: 'Median variance.', calc: 'Median Diff', usage: 'Consistency.', flaws: 'None.', deepDive: 'More robust consistency metric.' }
 };
 
-// --- HELPER COMPONENTS (Memoized for Performance) ---
+// --- HELPER COMPONENTS (Memoized) ---
 
 const PlayerHeadshot = memo(({ mlbId, size = 'large' }) => {
   const url = mlbId 
@@ -214,13 +215,11 @@ const PercentileBar = memo(({ label, value, percentile, suffix = '' }) => {
   )
 });
 
-// Extracted out of PlayerListView to prevent re-creation on every render
 const PitchArsenal = memo(({ player }) => {
     const [expanded, setExpanded] = useState(false)
     const [hoveredPitch, setHoveredPitch] = useState(null)
     const pitchConfig = [{ code: 'FA', name: 'Fastball', color: '#d946ef' }, { code: 'FC', name: 'Cutter', color: '#9333ea' }, { code: 'CT', name: 'Cutter', color: '#9333ea' }, { code: 'SI', name: 'Sinker', color: '#e879f9' }, { code: 'SL', name: 'Slider', color: '#f59e0b' }, { code: 'CU', name: 'Curve', color: '#06b6d4' }, { code: 'CH', name: 'Change', color: '#10b981' }, { code: 'FS', name: 'Splitter', color: '#3b82f6' }]
     
-    // UseMemo here prevents array sorting on every render if player obj ref hasn't changed
     const arsenal = useMemo(() => {
         return pitchConfig.map(p => ({ ...p, usage: player[`u${p.code}`] || 0, velo: player[`v${p.code}`] || 0, spin: player[`s${p.code}`] || 0 })).filter(p => p.usage * 100 > 5).sort((a, b) => b.usage - a.usage)
     }, [player]);
@@ -342,7 +341,6 @@ const GlossaryView = () => {
                           </div>
                         )}
 
-                        {/* UPDATED LAYOUT: Usage & Flaws Blocks */}
                         <div className="usage-flaws-section">
                             <div className="uf-block">
                                 <div className="tag-badge tag-good">Usage</div>
@@ -493,6 +491,10 @@ function App() {
   const [search, setSearch] = useState('')
   const [archetype, setArchetype] = useState('')
   const [archetypeList, setArchetypeList] = useState([])
+  const [teamFilter, setTeamFilter] = useState('All'); // NEW TEAM STATE
+  
+  // Memoize team list to prevent re-renders
+  const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
   
   // Sorting & Pagination
   const [sortConfig, setSortConfig] = useState({ key: 'WAR', direction: 'desc' })
@@ -512,9 +514,6 @@ function App() {
   const [compareTarget, setCompareTarget] = useState(null)
   const [compareSearch, setCompareSearch] = useState('')
   const [compareResults, setCompareResults] = useState([])
-
-  const [teamFilter, setTeamFilter] = useState('All');
-  const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
 
   // Initial Fetch: Archetypes
   useEffect(() => {
@@ -541,6 +540,7 @@ function App() {
     
     if (search && search.trim()) params.search = search.trim();
     if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
+    // Add Team Filter to API Params
     if (teamFilter && teamFilter !== 'All') params.team = teamFilter;
 
     // Fetch all players for Charts/Lab view (no pagination)
@@ -551,9 +551,21 @@ function App() {
 
     axios.get(`${API_BASE_URL}/pitchers`, { params })
       .then(response => { 
-        setPitchers(response.data.data) 
-        setTotalPlayers(response.data.total)
-        setLoading(false) 
+        let data = response.data.data;
+        
+        // --- CRITICAL FIX: CLIENT-SIDE FILTERING FALLBACK ---
+        // If the API ignores the 'team' param and returns everyone, we filter locally here.
+        if (teamFilter !== 'All' && data.length > 0) {
+            // Check if the API returned filtered data or if we need to filter manually
+            const needsClientFilter = data.some(p => p.Team !== teamFilter);
+            if (needsClientFilter) {
+               data = data.filter(p => p.Team === teamFilter);
+            }
+        }
+
+        setPitchers(data);
+        setTotalPlayers(response.data.total); // Note: Total might be inaccurate if client-filtering
+        setLoading(false);
       })
       .catch(err => {
         console.error("API Error:", err);
@@ -603,7 +615,8 @@ function App() {
           <h1>⚾ MLB Pitcher Valuation 2025</h1>
           <div className="nav-tabs">
             <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => setActiveTab('players')}>Player Cards</button>
-            <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>            <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
+            <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>            
+            <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
             <button className={`nav-tab ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => setActiveTab('lab')}>Pitch Lab 3D</button>
             <button className={`nav-tab ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Info & Glossary</button>
           </div>
@@ -612,14 +625,18 @@ function App() {
         {activeTab === 'players' && (
           <div className="controls">
             <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
-            <select value={archetype} onChange={e => setArchetype(e.target.value)}>
-              <option value="">All Archetypes</option>
-              {archetypeList.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
+            
+            {/* TEAM FILTER DROPDOWN */}
             <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}>
               <option value="All">All Teams</option>
               {teamList.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
+
+            <select value={archetype} onChange={e => setArchetype(e.target.value)}>
+              <option value="">All Archetypes</option>
+              {archetypeList.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            
             {viewMode === 'grid' && (
                 <select value={sortConfig.key} onChange={e => handleSort(e.target.value)}>
                 <option value="WAR">Sort: WAR</option>
@@ -666,7 +683,7 @@ function App() {
                 />
             )}
             
-            {activeTab === 'scatter' && <ChartsView data={pitchers} />}        
+            {activeTab === 'charts' && <ChartsView data={pitchers} />}        
             {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
 
             {activeTab === 'lab' && (
