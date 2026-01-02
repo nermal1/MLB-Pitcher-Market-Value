@@ -171,17 +171,20 @@ const SimilarityTable = ({ targetNode, neighbors, metrics, links }) => {
 // --- 3. OPTIMIZED NETWORK GRAPH COMPONENT ---
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
+    
+    // State
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     const [inputValue, setInputValue] = useState('');
     const [targetPlayer, setTargetPlayer] = useState('');
-    const [neighborCount, setNeighborCount] = useState(5);
+    const [neighborCount, setNeighborCount] = useState(5); // Capped at 20 in UI
     const [selectedMetrics, setSelectedMetrics] = useState(['K%', 'BB%', 'vFA (sc)', 'Stuff+']);
     const [isLoading, setIsLoading] = useState(false);
     
-    const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
-    
-    // Use a Ref to store loaded images so we don't re-create them
+    // Refs for interaction & logic
     const imgCache = useRef({});
+    const prevTargetRef = useRef(null); // Track previous target to prevent jarring zooms
+    
+    const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
 
     // Debounce Input
     useEffect(() => {
@@ -190,28 +193,26 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 setTargetPlayer('');
                 return;
             }
-            // Case-insensitive match
             const match = allPlayers.find(p => p.Name.toLowerCase() === inputValue.toLowerCase());
             if (match) setTargetPlayer(match.Name);
         }, 600);
         return () => clearTimeout(timer);
     }, [inputValue, allPlayers]);
 
-    // Fetch Data
+    // Data Fetching
     const fetchGraph = useCallback(() => {
         setIsLoading(true);
         const params = new URLSearchParams();
         selectedMetrics.forEach(m => params.append('metrics', m));
         params.append('neighbors', neighborCount);
         
-        // If no target player, request a smaller subset or specific "star" players to prevent UI freeze
         if (targetPlayer) params.append('target_player', targetPlayer);
-        else params.append('limit', 50); // Safety limit if no player selected
+        else params.append('limit', 50);
 
         axios.get(`https://pitch-lab-api.onrender.com/graph-data?${params.toString()}`)
             .then(res => {
                 const data = res.data;
-                // Pre-load images for the new nodes to prevent stutter later
+                // Pre-load images
                 data.nodes.forEach(node => {
                     if (node.mlbId && !imgCache.current[node.mlbId]) {
                         const img = new Image();
@@ -223,12 +224,16 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 setGraphData(data);
                 setIsLoading(false);
                 
-                // Re-center camera on data change
-                if(fgRef.current && targetPlayer) {
+                // ZOOM LOGIC FIX: Only zoom if the TARGET PLAYER has changed.
+                // If we just changed metrics/neighbors, keep the camera steady.
+                if (fgRef.current && targetPlayer && targetPlayer !== prevTargetRef.current) {
                     fgRef.current.d3Force('link').distance(40);
                     fgRef.current.d3ReheatSimulation();
-                    setTimeout(() => fgRef.current.zoomToFit(400, 50), 500);
+                    setTimeout(() => fgRef.current.zoomToFit(400, 50), 200);
                 }
+                
+                // Update ref
+                prevTargetRef.current = targetPlayer;
             })
             .catch(err => {
                 console.error(err);
@@ -238,45 +243,60 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     useEffect(() => { fetchGraph(); }, [fetchGraph]);
 
-    // --- OPTIMIZED PAINT FUNCTION ---
+    // --- VISUAL RENDERING (Paint Node) ---
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
-        // Determine base size
         const size = isTarget ? 16 : (targetPlayer ? 8 : 4); 
         
-        // 1. Draw Circle Base
+        // 1. Draw Circle Base (The "Border")
         const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
         ctx.fillStyle = colors[node.group] || '#94a3b8';
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fill();
 
-        // 2. Draw Image (ONLY if zoomed in or is target) - Optimization: No circular clipping
-        // We only draw the image if globalScale is high enough to see it, or if it's the main target
+        // 2. Draw Circular Image (Optimized)
+        // Only draw if zoomed in OR if it's the target player
         const shouldDrawImage = (globalScale > 1.2 || isTarget) && node.mlbId && imgCache.current[node.mlbId];
         
         if (shouldDrawImage) {
             const img = imgCache.current[node.mlbId];
             if (img.complete) {
-                // Draw square image inside the circle (faster than clipping)
-                const imgSize = size * 1.8; 
-                ctx.drawImage(img, node.x - imgSize / 2, node.y - imgSize / 2, imgSize, imgSize);
+                ctx.save();
+                ctx.beginPath();
+                // Create circular clipping path
+                ctx.arc(node.x, node.y, size - 1, 0, 2 * Math.PI, false);
+                ctx.clip();
+                // Draw image
+                const imgSize = size * 2; 
+                ctx.drawImage(img, node.x - size, node.y - size, imgSize, imgSize);
+                ctx.restore();
             }
         }
 
-        // 3. Draw Text (ONLY if zoomed in heavily, or is target)
+        // 3. Draw Text Labels
         if (isTarget || globalScale > 1.5) {
             const fontSize = isTarget ? 14 / globalScale : 10 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillStyle = isTarget ? '#ffffff' : '#e2e8f0';
-            // Draw background stroke for readability
+            ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 3 / globalScale;
-            ctx.strokeText(node.lastName || node.id, node.x, node.y + size + fontSize + 2);
-            ctx.fillText(node.lastName || node.id, node.x, node.y + size + fontSize + 2);
+            
+            const labelY = node.y + size + fontSize + 2;
+            ctx.strokeText(node.lastName || node.id, node.x, labelY);
+            ctx.fillText(node.lastName || node.id, node.x, labelY);
         }
+    }, [targetPlayer]);
+
+    // --- INTERACTION AREA (Fixes Clickability) ---
+    const nodePointerAreaPaint = useCallback((node, color, ctx) => {
+        const size = node.id === targetPlayer ? 16 : (targetPlayer ? 8 : 4);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false); // Slightly larger hit area
+        ctx.fill();
     }, [targetPlayer]);
 
     const toggleMetric = (m) => setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
@@ -284,7 +304,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     return (
       <div className="chart-container fade-in" style={{ marginTop: '20px', display: 'flex', gap: '20px', flexDirection: 'row', flexWrap: 'wrap' }}>
         
-        {/* SIDEBAR CONTROLS */}
+        {/* SIDEBAR */}
         <div className="graph-sidebar" style={{ minWidth: '250px', flex: '0 0 250px' }}>
             <h3>Similarity Engine</h3>
             
@@ -296,9 +316,9 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                         placeholder="Type name..." 
                         value={inputValue} 
                         onChange={(e) => setInputValue(e.target.value)} 
-                        style={{width: '100%', padding: '8px', background: '#1e293b', border: '1px solid #334155', color: 'white', borderRadius: '6px'}}
+                        className="dark-input"
                     />
-                    {isLoading && <span style={{position: 'absolute', right: '10px', top: '8px', fontSize: '12px'}}>Loading...</span>}
+                    {isLoading && <span className="input-loader">Loading...</span>}
                 </div>
                 <datalist id="players">{allPlayers.map(p => <option key={p.Name} value={p.Name} />)}</datalist>
             </div>
@@ -317,10 +337,20 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             {targetPlayer && (
                 <>
                     <div className="control-group">
-                        <label>Neighbors: {neighborCount}</label>
-                        <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} />
+                        <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}>
+                            <label>Neighbors</label>
+                            <span style={{color:'#a855f7', fontWeight:'bold'}}>{neighborCount}</span>
+                        </div>
+                        {/* Fixed range slider style */}
+                        <input 
+                            type="range" 
+                            min="1" 
+                            max="20" 
+                            value={neighborCount} 
+                            onChange={(e) => setNeighborCount(parseInt(e.target.value))} 
+                            style={{width: '100%', cursor: 'pointer'}}
+                        />
                     </div>
-                    {/* Reuse your SimilarityTable component here */}
                      <SimilarityTable 
                         targetNode={graphData.nodes.find(n => n.id === targetPlayer)} 
                         neighbors={graphData.nodes.filter(n => n.id !== targetPlayer)} 
@@ -345,7 +375,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ref={fgRef}
             graphData={graphData}
             nodeCanvasObject={paintNode}
-            // PERFORMANCE: Calculate physics once, then stop. Don't run continuously.
+            nodePointerAreaPaint={nodePointerAreaPaint} // CRITICAL: Ensures clicks work on custom nodes
+            
             warmupTicks={100} 
             cooldownTicks={0}
             
@@ -355,8 +386,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             backgroundColor="#0f172a"
             onNodeClick={node => { setInputValue(node.id); setTargetPlayer(node.id); }}
             
-            // Interaction settings
-            enableNodeDrag={false} // Dragging causes re-renders, disable for speed
+            enableNodeDrag={false}
             enableZoomInteraction={true}
           />
         </div>

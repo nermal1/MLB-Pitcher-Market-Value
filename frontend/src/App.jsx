@@ -49,11 +49,11 @@ const METRIC_DEFINITIONS = {
   },
   'kWAR': { 
     name: 'Predictive WAR', 
-    desc: 'Our proprietary model blending results with raw physical talent.',
-    calc: '(fWAR * 0.5) + (Stuff+ * 0.3) + (Location+ * 0.15) + (Role_Leverage * 0.05)',
-    usage: 'Use kWAR for talent evaluation, trade targets, and dynasty leagues. It tells you who SHOULD succeed.',
-    flaws: 'Currently overvalues high-leverage relievers because the leverage component can outweigh inning volume.',
-    deepDive: 'Standard WAR is retrospective. kWAR is predictive. By weighting Stuff+ and Location+, we account for pitchers who underperformed their talent due to poor defensive luck.'
+    desc: 'A proprietary metric that fixes WAR\'s blind spots by rewarding weak-contact management and high-leverage relief performance.',     calc: '(fWAR * 0.5) + (Stuff+ * 0.3) + (Location+ * 0.15) + (Role_Leverage * 0.05)',
+    calc: 'Starter: WAR + [(FIP - SIERA) * IP_Factor]\nReliever: (WAR + Skill_Adj) * Leverage_Multiplier',
+    usage: 'The primary ranking metric for this project. It allows for a fair comparison between workhorse Starters and elite "Firemen" Closers.',
+    flaws: 'Heavily reliant on SIERA accuracy. Can be volatile for relievers with small sample sizes where gmLI fluctuates wildly.',
+    deepDive: 'Standard WAR suffers from two problems: 1) It ignores "clutch" pitching (Leverage), and 2) It assumes pitchers can\'t control contact (FIP). kWAR fixes this. First, we replace FIP with SIERA to credit pitchers who induce weak contact (the "Skill Gap"). Second, for relievers, we apply a Leverage Multiplier based on gmLI. This rewards closers like Emmanuel Clase who pitch fewer innings but in the most critical, game-defining moments.'
   },
   'kWAR_Diff': { 
     name: 'Value Gap', 

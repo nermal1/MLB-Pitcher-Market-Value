@@ -1242,19 +1242,7 @@ strong {
   animation: fadeIn 0.2s ease-out;
 }
 
-.deep-dive-modal {
-  background: #1e293b; /* Dark Slate */
-  width: 90%;
-  max-width: 800px;
-  max-height: 90vh; /* Prevents it from being taller than screen */
-  overflow-y: auto; /* Scroll inside modal if needed */
-  border-radius: 16px;
-  border: 1px solid #334155;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
+
 
 /* --- MODAL HEADER --- */
 .deep-dive-header {
@@ -1284,14 +1272,7 @@ strong {
   font-weight: 600;
 }
 
-/* --- MODAL BODY GRID --- */
-.deep-dive-body {
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  color: #e2e8f0;
-}
+
 
 /* Top Section: Definition & Formula */
 .dd-top-row {
@@ -1313,15 +1294,6 @@ strong {
   color: #64748b;
 }
 
-.formula-box {
-  background: #0f172a;
-  padding: 1rem;
-  border-radius: 8px;
-  border: 1px solid #334155;
-  font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
-  color: #38bdf8; /* Light Blue */
-}
 
 /* Middle Section: Usage vs Flaws */
 .dd-comparison-grid {
@@ -1409,4 +1381,90 @@ strong {
   color: #38bdf8;
   opacity: 0.8;
   text-align: right;
+}
+
+/* Sidebar Input Styling */
+.dark-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: white;
+  border-radius: 6px;
+  outline: none;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.dark-input:focus {
+  border-color: #a855f7;
+}
+
+.input-loader {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+/* Range Slider */
+input[type=range] {
+  accent-color: #a855f7; /* Makes the slider purple to match theme */
+  height: 6px;
+  background: #334155;
+  border-radius: 4px;
+}
+
+/* --- MODAL FIXES --- */
+.deep-dive-modal {
+  background: #1e293b;
+  width: 90%;
+  max-width: 650px; /* Reduced from 800px for better readability */
+  max-height: 85vh; /* Ensure it fits vertically */
+  overflow-y: auto; /* vertical scroll only */
+  overflow-x: hidden; /* Prevent horizontal scroll */
+  border-radius: 16px;
+  border: 1px solid #334155;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box; /* Critical for padding calculations */
+}
+
+/* Ensure the body content wraps nicely */
+.deep-dive-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: #e2e8f0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Fix Formula Wrapping */
+.formula-box {
+  background: #0f172a;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #38bdf8;
+  
+  /* CRITICAL: Allows long math to wrap instead of scroll */
+  white-space: pre-wrap; 
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* Force text to not overflow */
+.dd-box p, .dd-card p, .dd-analyst-take p {
+  line-height: 1.6;
+  font-size: 0.95rem;
+  margin: 0;
+  word-wrap: break-word; 
 }
