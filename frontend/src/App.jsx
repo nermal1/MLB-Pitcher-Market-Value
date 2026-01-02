@@ -479,6 +479,7 @@ const PlayerListView = ({
 // --- MAIN APP COMPONENT ---
 
 function App() {
+  const [displayPitchers, setDisplayPitchers] = useState([])
   const [pitchers, setPitchers] = useState([])
   const [loading, setLoading] = useState(true)
   
@@ -512,6 +513,9 @@ function App() {
   const [compareSearch, setCompareSearch] = useState('')
   const [compareResults, setCompareResults] = useState([])
 
+  const [globalData, setGlobalData] = useState([]); 
+  
+
   // Initial Fetch: Archetypes
   useEffect(() => {
     axios.get(`${API_BASE_URL}/archetypes`)
@@ -524,57 +528,94 @@ function App() {
     if (activeTab === 'info') { setLoading(false); return; }
 
     setLoading(true)
+
+    const isGlobalFetchNeeded = (activeTab !== 'players') || (teamFilter !== 'All');
+
     const params = { 
+      limit: isGlobalFetchNeeded ? 1000 : rowsPerPage,
+      skip: isGlobalFetchNeeded ? 0 : page * rowsPerPage,
       sort_by: sortConfig.key,
-      sort_order: sortConfig.direction,
-      limit: rowsPerPage,
-      skip: page * rowsPerPage
+      sort_order: sortConfig.direction
     }
-    
-    if (search && search.trim()) params.search = search.trim();
-    if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
-    
-    // --- KEY LOGIC CHANGE ---
-    // 1. If we are on 'Charts' tab, we want GLOBAL data (all teams), so we ignore the teamFilter.
-    // 2. If we are on 'Players' tab and a team is selected, we fetch ALL players (limit=1000) 
-    //    and filter locally to ensure the full roster shows up.
-    
-    if (activeTab === 'charts' || activeTab === 'network' || activeTab === 'lab') {
-        params.limit = 1000;
-        params.skip = 0;
-        // Do NOT add params.team here, so charts see everyone.
-    } else {
-        // We are on 'players' tab
-        if (teamFilter !== 'All') {
-            params.limit = 1000; // Fetch everyone to ensure we catch all team members
-            params.skip = 0;
-            // We intentionally do NOT pass params.team to the API because we will filter locally 
-            // to ensure we get 100% of the roster, avoiding API pagination issues.
-        }
+
+    if (!isGlobalFetchNeeded) {
+        if (search && search.trim()) params.search = search.trim();
+        if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
     }
 
     axios.get(`${API_BASE_URL}/pitchers`, { params })
-      .then(response => { 
-        let data = response.data.data;
-        
-        // --- CLIENT-SIDE FILTERING ---
-        // If we are on the players tab and a team is selected, filtering locally guarantees results.
-        if (activeTab === 'players' && teamFilter !== 'All') {
-            data = data.filter(p => p.Team === teamFilter);
-            setTotalPlayers(data.length); // Update total count to reflect filtered set
-        } else if (activeTab === 'players') {
+      .then(response => {
+        let rawData = response.data.data;
+
+        const normalizedData = rawData.map(p => {
+            let team = p.Team;
+            if (team === 'CHW') team = 'CWS'; // Fix White Sox
+            if (team === 'ATH') team = 'OAK'; // Fix Athletics
+            if (team === 'WAS') team = 'WSH'; // Fix Nationals
+            return { ...p, Team: team };
+        });
+
+        setGlobalData(normalizedData);
+
+        if (!isGlobalFetchNeeded) {
+            setDisplayPitchers(normalizedData); 
             setTotalPlayers(response.data.total);
         }
 
-        setPitchers(data);
         setLoading(false);
       })
       .catch(err => {
-        console.error("API Error:", err);
-        setLoading(false);
+        console.error("API error", err);
+        setLoading(false)
       })
+    
   }, [search, archetype, teamFilter, sortConfig, page, rowsPerPage, activeTab]) 
 
+  // 3. CLIENT-SIDE FILTERING & PAGINATION
+  // This runs whenever globalData changes OR filters change.
+  useEffect(() => {
+    const isGlobalMode = (activeTab !== 'players') || (teamFilter !== 'All');
+    
+    if (isGlobalMode && globalData.length > 0) {
+        let filtered = [...globalData];
+
+        // 1. Filter by Team (Only for Players tab)
+        if (activeTab === 'players' && teamFilter !== 'All') {
+            filtered = filtered.filter(p => p.Team === teamFilter);
+        }
+
+        // 2. Filter by Search (Local)
+        if (search) {
+            filtered = filtered.filter(p => p.Name.toLowerCase().includes(search.toLowerCase()));
+        }
+
+        // 3. Filter by Archetype (Local)
+        if (archetype && archetype !== 'All Archetypes') {
+            filtered = filtered.filter(p => p.Archetype === archetype);
+        }
+
+        // 4. Sort (Local)
+        filtered.sort((a, b) => {
+            const valA = a[sortConfig.key] || 0;
+            const valB = b[sortConfig.key] || 0;
+            return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+        });
+
+        // Update Total Count
+        if (activeTab === 'players') setTotalPlayers(filtered.length);
+
+        // 5. Pagination (Slice the data for display)
+        if (activeTab === 'players') {
+            const start = page * rowsPerPage;
+            const end = start + rowsPerPage;
+            setDisplayPitchers(filtered.slice(start, end));
+        } else {
+            // For Charts, send everything
+            setDisplayPitchers(filtered);
+        }
+    }
+  }, [globalData, activeTab, teamFilter, search, archetype, sortConfig, page, rowsPerPage]);
+  
   // Reset page when filters change
   useEffect(() => { setPage(0) }, [search, archetype, teamFilter])
 
@@ -661,7 +702,7 @@ function App() {
           <>
             {activeTab === 'players' && (
                 <PlayerListView 
-                    pitchers={pitchers} 
+                    pitchers={displayPitchers} 
                     viewMode={viewMode} 
                     setViewMode={setViewMode}
                     selectedPlayer={selectedPlayer} 
@@ -685,8 +726,8 @@ function App() {
             )}
             
             {/* Charts View now gets independent data in effect, but logic above handles it */}
-            {activeTab === 'charts' && <ChartsView data={pitchers} />}        
-            {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
+            {activeTab === 'charts' && <ChartsView data={globalData} />}        
+            {activeTab === 'network' && <SimilarityNetwork allPlayers={globalData} />}
 
             {activeTab === 'lab' && (
               <div style={{ display: 'flex', height: '700px', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
