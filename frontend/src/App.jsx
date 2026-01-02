@@ -251,37 +251,31 @@ const PitchArsenal = memo(({ player }) => {
 
 const GlossaryView = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const [expandedMetric, setExpandedMetric] = useState(null); // Which item is currently open in the sidebar?
+  const [expandedMetric, setExpandedMetric] = useState(null);
 
-  // Memoize categories
   const categories = useMemo(() => [
     { title: 'Basic Metrics', keys: COLUMN_CATEGORIES.basic },
     { title: 'Advanced Sabermetrics', keys: COLUMN_CATEGORIES.advanced }
   ], []);
 
-  // Handle clicking a card from the main grid
   const handleGridClick = (key) => {
-    setExpandedMetric(key); // Set this metric as the "Active/Open" one
-    setSidebarOpen(true);   // Open the sidebar
+    setExpandedMetric(key);
+    setSidebarOpen(true);
   };
 
-  // Toggle accordion items inside the sidebar
   const toggleAccordion = (key) => {
-    // If clicking the already open one, close it. Otherwise, open the new one.
     setExpandedMetric(prev => prev === key ? null : key);
   };
 
   return (
     <div className="glossary-container fade-in">
       
-      {/* 1. HAMBURGER BUTTON (Fixed Position) */}
       {!isSidebarOpen && (
         <button className="sidebar-trigger" onClick={() => setSidebarOpen(true)} title="Open Metrics Sidebar">
           ☰
         </button>
       )}
 
-      {/* 2. MAIN GRID CONTENT */}
       <div className="glossary-header">
         <h2>Statistical Glossary</h2>
         <p>Click any card below (or the menu icon ☰) to open the details sidebar.</p>
@@ -308,10 +302,8 @@ const GlossaryView = () => {
         </div>
       ))}
 
-      {/* 3. SIDEBAR BACKDROP (Click to close) */}
       {isSidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)}></div>}
 
-      {/* 4. SLIDING SIDEBAR */}
       <div className={`glossary-sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <h3>Metric Explorer</h3>
@@ -331,13 +323,11 @@ const GlossaryView = () => {
 
                 return (
                   <div key={key} id={`metric-${key}`} className={`metric-accordion-item ${isOpen ? 'active' : ''}`}>
-                    {/* Header: Always visible */}
                     <div className="accordion-header" onClick={() => toggleAccordion(key)}>
                       <span>{key} <span style={{fontWeight:'normal', fontSize:'0.85rem', color:'#94a3b8'}}>- {def.name}</span></span>
                       <span className="arrow-icon">▼</span>
                     </div>
 
-                    {/* Body: Visible only when open */}
                     {isOpen && (
                       <div className="accordion-body">
                         <div>
@@ -352,14 +342,16 @@ const GlossaryView = () => {
                           </div>
                         )}
 
-                        <div className="sidebar-tags">
-                            <div className="tag-badge tag-good">✅ Usage</div>
-                            <div className="tag-badge tag-bad">⚠️ Flaws</div>
-                        </div>
-
-                        <div>
-                           <p><strong>Use for:</strong> {def.usage}</p>
-                           <p style={{marginTop: '0.5rem'}}><strong>Watch out for:</strong> {def.flaws}</p>
+                        {/* UPDATED LAYOUT: Usage & Flaws Blocks */}
+                        <div className="usage-flaws-section">
+                            <div className="uf-block">
+                                <div className="tag-badge tag-good">Usage</div>
+                                <p className="uf-text">{def.usage}</p>
+                            </div>
+                            <div className="uf-block">
+                                <div className="tag-badge tag-bad">Flaws</div>
+                                <p className="uf-text">{def.flaws}</p>
+                            </div>
                         </div>
 
                         {def.deepDive && (
@@ -377,7 +369,6 @@ const GlossaryView = () => {
           ))}
         </div>
       </div>
-
     </div>
   )
 }

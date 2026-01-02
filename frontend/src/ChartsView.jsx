@@ -1,10 +1,60 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label } from 'recharts';
+import { 
+  ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  Tooltip, ResponsiveContainer, Label, Legend, Cell 
+} from 'recharts';
 import ForceGraph2D from 'react-force-graph-2d';
 import axios from 'axios';
 
-// --- 1. INTERACTIVE SCATTER PLOT ---
-export const PerformanceScatter = ({ data }) => {
+// ==========================================
+// 1. HELPER: TEAM DATA AGGREGATION
+// ==========================================
+const aggregateTeamData = (players, metric) => {
+  const teams = {};
+
+  players.forEach(p => {
+    if (!p.Team) return;
+    if (!teams[p.Team]) {
+      teams[p.Team] = { 
+        Team: p.Team, 
+        StarterVal: 0, 
+        RelieverVal: 0, 
+        TotalVal: 0, 
+        TotalIP: 0,
+        WeightedSum: 0 
+      };
+    }
+
+    const val = parseFloat(p[metric]) || 0;
+    
+    // Logic for COUNTING stats (Sum them up)
+    if (['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
+      if (p.Position === 'Starter') teams[p.Team].StarterVal += val;
+      else teams[p.Team].RelieverVal += val;
+      teams[p.Team].TotalVal += val;
+    } 
+    // Logic for RATE stats (Weighted Average by IP)
+    else {
+      const ip = parseFloat(p.IP) || 0;
+      teams[p.Team].TotalIP += ip;
+      teams[p.Team].WeightedSum += (val * ip);
+    }
+  });
+
+  return Object.values(teams).map(t => {
+    // Finalize Rate Stats calculation
+    if (!['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
+      t.TotalVal = t.TotalIP > 0 ? t.WeightedSum / t.TotalIP : 0;
+    }
+    return t;
+  }).sort((a, b) => b.TotalVal - a.TotalVal); // Sort highest to lowest
+};
+
+
+// ==========================================
+// 2. SUB-VIEW: INDIVIDUAL SCATTER PLOT
+// ==========================================
+const ScatterView = ({ data }) => {
   const [xMetric, setXMetric] = useState('Stuff+');
   const [yMetric, setYMetric] = useState('kWAR');
   const [playerCount, setPlayerCount] = useState(50);
@@ -24,9 +74,6 @@ export const PerformanceScatter = ({ data }) => {
     { label: 'Whiff %', value: 'SwStr%' }
   ];
 
-  const archetypes = useMemo(() => ['All', ...new Set(data.map(p => p.Archetype).filter(Boolean))], [data]);
-
-  // PERFORMANCE FIX: Only recalculate data when filters actually change
   const processedData = useMemo(() => {
     return data
       .filter(p => {
@@ -51,8 +98,8 @@ export const PerformanceScatter = ({ data }) => {
             <p className="label">{p.Name}</p>
             <span className="tooltip-team">{p.Team} • {p.Archetype}</span>
           </div>
-          <p className="intro">{xMetric}: <strong>{typeof p[xMetric] === 'number' ? p[xMetric].toFixed(1) : p[xMetric]}{xMetric.includes('%') ? '%' : ''}</strong></p>
-          <p className="intro">{yMetric}: <strong>{typeof p[yMetric] === 'number' ? p[yMetric].toFixed(1) : p[yMetric]}{yMetric.includes('%') ? '%' : ''}</strong></p>
+          <p className="intro">{xMetric}: <strong>{typeof p[xMetric] === 'number' ? p[xMetric].toFixed(1) : p[xMetric]}</strong></p>
+          <p className="intro">{yMetric}: <strong>{typeof p[yMetric] === 'number' ? p[yMetric].toFixed(1) : p[yMetric]}</strong></p>
         </div>
       );
     }
@@ -60,7 +107,7 @@ export const PerformanceScatter = ({ data }) => {
   };
 
   return (
-    <div className="chart-container fade-in">
+    <div className="chart-sub-view fade-in">
       <div className="chart-header-row">
         <h2>League Landscape</h2>
         <div className="chart-controls">
@@ -79,7 +126,8 @@ export const PerformanceScatter = ({ data }) => {
            <div className="control-group-mini">
              <label>Filter</label>
              <select value={archetype} onChange={(e) => setArchetype(e.target.value)}>
-               {archetypes.map(a => <option key={a} value={a}>{a}</option>)}
+               <option value="All">All Archetypes</option>
+               {[...new Set(data.map(p => p.Archetype).filter(Boolean))].map(a => <option key={a} value={a}>{a}</option>)}
              </select>
            </div>
            <div className="control-group-mini">
@@ -108,67 +156,126 @@ export const PerformanceScatter = ({ data }) => {
               <Label value={yMetric} angle={-90} position="insideLeft" fill="#94a3b8" />
             </YAxis>
             <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-            {/* PERFORMANCE FIX: Disable animation for large datasets */}
             <Scatter name="Pitchers" data={processedData} fill="#8884d8" isAnimationActive={false} />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
     </div>
   )
-}
+};
 
-// --- 2. SIMILARITY TABLE ---
-const SimilarityTable = ({ targetNode, neighbors, metrics, links }) => {
-    if (!targetNode) return null;
-    const formatVal = (val, metric) => {
-        if (val === undefined || val === null || isNaN(val)) return '-';
-        if (metric.includes('%')) return (val * 100).toFixed(1) + '%';
-        if (metric.includes('v') && metric.includes('(sc)')) return val.toFixed(1);
-        if (['ERA', 'SIERA', 'FIP'].includes(metric)) return val.toFixed(2);
-        return val.toFixed(0);
-    };
 
-    return (
-        <div className="sim-table-container fade-in">
-            <h4>Similarity Breakdown</h4>
-            <div className="sim-table-wrapper">
-                <table className="sim-table">
-                    <thead>
-                        <tr>
-                            <th>Player</th>
-                            <th>Sim %</th>
-                            {metrics.map(m => <th key={m} className="stat-header">{m}</th>)}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr className="target-row">
-                            <td className="name-cell"><span className="marker-dot" style={{background: '#a855f7'}}></span>{targetNode.lastName}</td>
-                            <td>-</td>
-                            {metrics.map(m => <td key={m} className="stat-cell target-stat">{formatVal(targetNode[m], m)}</td>)}
-                        </tr>
-                        {neighbors.map(node => {
-                            const link = links.find(l => {
-                                const s = l.source.id || l.source;
-                                const t = l.target.id || l.target;
-                                return (s === node.id && t === targetNode.id) || (s === targetNode.id && t === node.id);
-                            });
-                            const simScore = link && link.similarity ? (link.similarity * 100).toFixed(0) : '?';
-                            return (
-                                <tr key={node.id}>
-                                    <td className="name-cell">{node.lastName}</td>
-                                    <td className="sim-cell">{simScore}%</td>
-                                    {metrics.map(m => <td key={m} className="stat-cell">{formatVal(node[m], m)}</td>)}
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                </table>
+// ==========================================
+// 3. SUB-VIEW: TEAM STACKED BAR CHART
+// ==========================================
+const TeamBarView = ({ data }) => {
+  const [metric, setMetric] = useState('kWAR');
+
+  const chartData = useMemo(() => aggregateTeamData(data, metric), [data, metric]);
+
+  // Check if metric is summable (Stacked) or averagable (Single Bar)
+  const isSummable = ['WAR', 'kWAR', 'W', 'L', 'IP'].includes(metric);
+
+  return (
+    <div className="chart-sub-view fade-in">
+      <div className="chart-header-row">
+        <h2>Team Roster Analysis</h2>
+        <div className="chart-controls">
+            <div className="control-group-mini">
+                <label>Metric</label>
+                <select value={metric} onChange={(e) => setMetric(e.target.value)}>
+                <option value="kWAR">kWAR (Total Value)</option>
+                <option value="WAR">WAR (Standard)</option>
+                <option value="ERA">ERA (Weighted Avg)</option>
+                <option value="Stuff+">Stuff+ (Weighted Avg)</option>
+                <option value="vFA (sc)">Fastball Velo (Avg)</option>
+                <option value="K%">Strikeout % (Avg)</option>
+                </select>
             </div>
         </div>
-    )
-}
+      </div>
 
-// --- 3. OPTIMIZED NETWORK GRAPH COMPONENT ---
+      <div className="scatter-wrapper">
+        <ResponsiveContainer width="100%" height={600}>
+          <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
+            <XAxis dataKey="Team" stroke="#94a3b8" angle={-45} textAnchor="end" interval={0} height={60} />
+            <YAxis stroke="#94a3b8" />
+            <Tooltip 
+              cursor={{fill: 'rgba(255,255,255,0.05)'}}
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const d = payload[0].payload;
+                  return (
+                    <div className="custom-tooltip">
+                      <div className="tooltip-header"><h3>{d.Team}</h3></div>
+                      {isSummable ? (
+                        <>
+                          <p style={{color: '#a855f7'}}>Starters: <strong>{d.StarterVal.toFixed(1)}</strong></p>
+                          <p style={{color: '#38bdf8'}}>Relievers: <strong>{d.RelieverVal.toFixed(1)}</strong></p>
+                          <hr style={{borderColor: '#334155', margin: '5px 0'}}/>
+                          <p>Total: <strong>{d.TotalVal.toFixed(1)}</strong></p>
+                        </>
+                      ) : (
+                        <p>Team Average: <strong>{d.TotalVal.toFixed(1)}</strong></p>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
+            {isSummable && <Legend verticalAlign="top" height={36}/>}
+            
+            {isSummable ? (
+              <>
+                <Bar dataKey="StarterVal" name="Starters" stackId="a" fill="#a855f7" />
+                <Bar dataKey="RelieverVal" name="Relievers" stackId="a" fill="#38bdf8" />
+              </>
+            ) : (
+              <Bar dataKey="TotalVal" name="Team Average" fill="#a855f7">
+                 {/* Color gradient for averages */}
+                 {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index < 5 ? '#4ade80' : (index > 25 ? '#f87171' : '#a855f7')} />
+                 ))}
+              </Bar>
+            )}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      
+      {isSummable && (
+        <div className="chart-note">
+          * Sorted by Total {metric}. The stacked bars show the contribution of the Rotation (Purple) vs Bullpen (Blue).
+        </div>
+      )}
+    </div>
+  )
+};
+
+
+// ==========================================
+// 4. MAIN EXPORT: CHARTS VIEW WRAPPER
+// ==========================================
+export const ChartsView = ({ data }) => {
+  const [activeChart, setActiveChart] = useState('scatter');
+
+  return (
+    <div className="charts-view-container fade-in">
+      <div className="charts-nav">
+        <button className={`chart-tab ${activeChart === 'scatter' ? 'active' : ''}`} onClick={() => setActiveChart('scatter')}>Scatter Plots (Individual)</button>
+        <button className={`chart-tab ${activeChart === 'team' ? 'active' : ''}`} onClick={() => setActiveChart('team')}>Team Comparison (Roster Analysis)</button>
+      </div>
+      
+      {activeChart === 'scatter' ? <ScatterView data={data} /> : <TeamBarView data={data} />}
+    </div>
+  );
+};
+
+
+// ==========================================
+// 5. EXPORT: SIMILARITY NETWORK (For use in App.js tab)
+// ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
     
@@ -176,13 +283,13 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     const [inputValue, setInputValue] = useState('');
     const [targetPlayer, setTargetPlayer] = useState('');
-    const [neighborCount, setNeighborCount] = useState(5); // Capped at 20 in UI
+    const [neighborCount, setNeighborCount] = useState(5);
     const [selectedMetrics, setSelectedMetrics] = useState(['K%', 'BB%', 'vFA (sc)', 'Stuff+']);
     const [isLoading, setIsLoading] = useState(false);
     
-    // Refs for interaction & logic
+    // Refs
     const imgCache = useRef({});
-    const prevTargetRef = useRef(null); // Track previous target to prevent jarring zooms
+    const prevTargetRef = useRef(null);
     
     const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
 
@@ -199,7 +306,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         return () => clearTimeout(timer);
     }, [inputValue, allPlayers]);
 
-    // Data Fetching
+    // Fetch Graph Data
     const fetchGraph = useCallback(() => {
         setIsLoading(true);
         const params = new URLSearchParams();
@@ -224,15 +331,12 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 setGraphData(data);
                 setIsLoading(false);
                 
-                // ZOOM LOGIC FIX: Only zoom if the TARGET PLAYER has changed.
-                // If we just changed metrics/neighbors, keep the camera steady.
+                // Camera logic
                 if (fgRef.current && targetPlayer && targetPlayer !== prevTargetRef.current) {
                     fgRef.current.d3Force('link').distance(40);
                     fgRef.current.d3ReheatSimulation();
                     setTimeout(() => fgRef.current.zoomToFit(400, 50), 200);
                 }
-                
-                // Update ref
                 prevTargetRef.current = targetPlayer;
             })
             .catch(err => {
@@ -243,20 +347,17 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     useEffect(() => { fetchGraph(); }, [fetchGraph]);
 
-    // --- VISUAL RENDERING (Paint Node) ---
+    // Paint Node
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
         const size = isTarget ? 16 : (targetPlayer ? 8 : 4); 
         
-        // 1. Draw Circle Base (The "Border")
         const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
         ctx.fillStyle = colors[node.group] || '#94a3b8';
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fill();
 
-        // 2. Draw Circular Image (Optimized)
-        // Only draw if zoomed in OR if it's the target player
         const shouldDrawImage = (globalScale > 1.2 || isTarget) && node.mlbId && imgCache.current[node.mlbId];
         
         if (shouldDrawImage) {
@@ -264,17 +365,14 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             if (img.complete) {
                 ctx.save();
                 ctx.beginPath();
-                // Create circular clipping path
                 ctx.arc(node.x, node.y, size - 1, 0, 2 * Math.PI, false);
                 ctx.clip();
-                // Draw image
                 const imgSize = size * 2; 
                 ctx.drawImage(img, node.x - size, node.y - size, imgSize, imgSize);
                 ctx.restore();
             }
         }
 
-        // 3. Draw Text Labels
         if (isTarget || globalScale > 1.5) {
             const fontSize = isTarget ? 14 / globalScale : 10 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
@@ -290,39 +388,83 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         }
     }, [targetPlayer]);
 
-    // --- INTERACTION AREA (Fixes Clickability) ---
+    // Interaction Area
     const nodePointerAreaPaint = useCallback((node, color, ctx) => {
         const size = node.id === targetPlayer ? 16 : (targetPlayer ? 8 : 4);
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false); // Slightly larger hit area
+        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
         ctx.fill();
     }, [targetPlayer]);
 
     const toggleMetric = (m) => setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
 
+    // Sub-Component: Similarity Table
+    const SimilarityTable = ({ targetNode, neighbors, metrics, links }) => {
+        if (!targetNode) return null;
+        const formatVal = (val, metric) => {
+            if (val === undefined || val === null || isNaN(val)) return '-';
+            if (metric.includes('%')) return (val * 100).toFixed(1) + '%';
+            if (metric.includes('v') && metric.includes('(sc)')) return val.toFixed(1);
+            if (['ERA', 'SIERA', 'FIP'].includes(metric)) return val.toFixed(2);
+            return val.toFixed(0);
+        };
+    
+        return (
+            <div className="sim-table-container fade-in">
+                <h4>Similarity Breakdown</h4>
+                <div className="sim-table-wrapper">
+                    <table className="sim-table">
+                        <thead>
+                            <tr>
+                                <th>Player</th>
+                                <th>Sim %</th>
+                                {metrics.map(m => <th key={m} className="stat-header">{m}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr className="target-row">
+                                <td className="name-cell"><span className="marker-dot" style={{background: '#a855f7'}}></span>{targetNode.lastName}</td>
+                                <td>-</td>
+                                {metrics.map(m => <td key={m} className="stat-cell target-stat">{formatVal(targetNode[m], m)}</td>)}
+                            </tr>
+                            {neighbors.map(node => {
+                                const link = links.find(l => {
+                                    const s = l.source.id || l.source;
+                                    const t = l.target.id || l.target;
+                                    return (s === node.id && t === targetNode.id) || (s === targetNode.id && t === node.id);
+                                });
+                                const simScore = link && link.similarity ? (link.similarity * 100).toFixed(0) : '?';
+                                return (
+                                    <tr key={node.id}>
+                                        <td className="name-cell">{node.lastName}</td>
+                                        <td className="sim-cell">{simScore}%</td>
+                                        {metrics.map(m => <td key={m} className="stat-cell">{formatVal(node[m], m)}</td>)}
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        )
+    };
+
     return (
       <div className="chart-container fade-in" style={{ marginTop: '20px', display: 'flex', gap: '20px', flexDirection: 'row', flexWrap: 'wrap' }}>
-        
-        {/* SIDEBAR */}
         <div className="graph-sidebar" style={{ minWidth: '250px', flex: '0 0 250px' }}>
             <h3>Similarity Engine</h3>
-            
             <div className="control-group">
                 <label>Target Player</label>
                 <div style={{position: 'relative'}}>
                     <input 
-                        list="players" 
-                        placeholder="Type name..." 
-                        value={inputValue} 
-                        onChange={(e) => setInputValue(e.target.value)} 
-                        className="dark-input"
+                        list="players" placeholder="Type name..." value={inputValue} 
+                        onChange={(e) => setInputValue(e.target.value)} className="dark-input"
                     />
                     {isLoading && <span className="input-loader">Loading...</span>}
                 </div>
                 <datalist id="players">{allPlayers.map(p => <option key={p.Name} value={p.Name} />)}</datalist>
             </div>
-
             <div className="control-group">
                 <label>Metric Mix:</label>
                 <div className="metric-tags">
@@ -333,7 +475,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     ))}
                 </div>
             </div>
-
             {targetPlayer && (
                 <>
                     <div className="control-group">
@@ -341,15 +482,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                             <label>Neighbors</label>
                             <span style={{color:'#a855f7', fontWeight:'bold'}}>{neighborCount}</span>
                         </div>
-                        {/* Fixed range slider style */}
-                        <input 
-                            type="range" 
-                            min="1" 
-                            max="20" 
-                            value={neighborCount} 
-                            onChange={(e) => setNeighborCount(parseInt(e.target.value))} 
-                            style={{width: '100%', cursor: 'pointer'}}
-                        />
+                        <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} style={{width: '100%', cursor: 'pointer'}} />
                     </div>
                      <SimilarityTable 
                         targetNode={graphData.nodes.find(n => n.id === targetPlayer)} 
@@ -359,35 +492,24 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     />
                 </>
             )}
-            
             <button className="reset-btn" onClick={() => {setInputValue(''); setTargetPlayer('');}}>Reset View</button>
         </div>
-
-        {/* GRAPH CANVAS */}
         <div className="graph-wrapper" style={{ flex: 1, height: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #334155', position: 'relative', overflow: 'hidden' }}>
           {graphData.nodes.length === 0 && !isLoading && (
-              <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#64748b'}}>
-                  Select a player to generate network
-              </div>
+              <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#64748b'}}>Select a player to generate network</div>
           )}
-          
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData}
             nodeCanvasObject={paintNode}
-            nodePointerAreaPaint={nodePointerAreaPaint} // CRITICAL: Ensures clicks work on custom nodes
-            
-            warmupTicks={100} 
-            cooldownTicks={0}
-            
+            nodePointerAreaPaint={nodePointerAreaPaint}
+            warmupTicks={100} cooldownTicks={0}
             nodeLabel="id"
             linkColor={() => 'rgba(71, 85, 105, 0.4)'}
             linkWidth={link => (link.similarity > 0.8 ? 2 : 1)}
             backgroundColor="#0f172a"
             onNodeClick={node => { setInputValue(node.id); setTargetPlayer(node.id); }}
-            
-            enableNodeDrag={false}
-            enableZoomInteraction={true}
+            enableNodeDrag={false} enableZoomInteraction={true}
           />
         </div>
       </div>
