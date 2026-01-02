@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
+// Ensure these files exist in your project structure
 import { PitchLab } from './pitchLab';
 import { PerformanceScatter, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
 
-// --- CONSTANTS ---
+// --- CONSTANTS & CONFIGURATION ---
+
+const API_BASE_URL = 'https://pitch-lab-api.onrender.com';
+
 const TEAM_LOGOS = {
   'BAL': 'bal', 'BOS': 'bos', 'NYY': 'nyy', 'TB': 'tb', 'TOR': 'tor',
   'CWS': 'chw', 'CLE': 'cle', 'DET': 'det', 'KC': 'kc', 'MIN': 'min',
@@ -15,7 +19,7 @@ const TEAM_LOGOS = {
   'ATL': 'atl', 'MIA': 'mia', 'NYM': 'nym', 'PHI': 'phi', 'WSH': 'wsh',
   'CHC': 'chc', 'CIN': 'cin', 'MIL': 'mil', 'PIT': 'pit', 'STL': 'stl',
   'ARI': 'ari', 'COL': 'col', 'LAD': 'lad', 'SD': 'sd', 'SF': 'sf'
-}
+};
 
 const COLUMN_CATEGORIES = {
   basic: [
@@ -29,9 +33,64 @@ const COLUMN_CATEGORIES = {
     'O-Swing%', 'Z-Swing%', 'Contact%', 'Zone%', 
     'WPA', 'RE24', 'gmLI', 'Clutch', 'SD', 'MD'
   ]
-}
+};
 
-const DEFAULT_COLS = ['WAR', 'kWAR', 'kWAR_Diff', 'ERA', 'WHIP', 'K%', 'Stuff+', 'SIERA']
+const DEFAULT_COLS = ['WAR', 'kWAR', 'kWAR_Diff', 'ERA', 'WHIP', 'K%', 'Stuff+', 'SIERA'];
+
+const METRIC_DEFINITIONS = {
+  // --- BASIC STATS ---
+  'WAR': { name: 'Wins Above Replacement', desc: 'A comprehensive statistic that estimates the number of wins a player contributes to their team relative to a replacement-level player.' },
+  'kWAR': { name: 'Predictive WAR', desc: 'Our proprietary WAR model based purely on underlying component metrics (K%, BB%, Quality of Contact) rather than outcomes. A better predictor of future success.' },
+  'kWAR_Diff': { name: 'Value Gap', desc: 'The difference between standard WAR and kWAR. Positive numbers indicate a pitcher who is performing better than their surface results suggest (undervalued).' },
+  'ERA': { name: 'Earned Run Average', desc: 'The average number of earned runs a pitcher gives up for every nine innings pitched.' },
+  'WHIP': { name: 'Walks + Hits per IP', desc: 'Measures how many baserunners a pitcher allows per inning pitched. A gold standard for measuring stability.' },
+  'IP': { name: 'Innings Pitched', desc: 'The total number of innings a player has pitched.' },
+  'G': { name: 'Games', desc: 'Total appearances in a game.' },
+  'GS': { name: 'Games Started', desc: 'Total games where the pitcher threw the first pitch.' },
+  'W': { name: 'Wins', desc: 'Credited to the pitcher who is pitching when their team takes the lead and keeps it.' },
+  'L': { name: 'Losses', desc: 'Credited to the pitcher who allows the go-ahead run while their team is losing.' },
+  'SV': { name: 'Saves', desc: 'Awarded to a reliever who finishes a game for the winning team under specific narrow lead conditions.' },
+  'HLD': { name: 'Holds', desc: 'Awarded to a reliever who enters with a lead, gets at least one out, and does not relinquish the lead.' },
+  'K%': { name: 'Strikeout Percentage', desc: 'The percentage of total batters faced that resulted in a strikeout. Superior to K/9 as it accounts for walk rates.' },
+  'BB%': { name: 'Walk Percentage', desc: 'The percentage of total batters faced that resulted in a walk.' },
+  'K/9': { name: 'Strikeouts per 9', desc: 'Average strikeouts per 9 innings.' },
+  'BB/9': { name: 'Walks per 9', desc: 'Average walks per 9 innings.' },
+  'HR/9': { name: 'Home Runs per 9', desc: 'Average home runs allowed per 9 innings.' },
+  'BABIP': { name: 'Batting Avg on Balls in Play', desc: 'The batting average against a pitcher excluding strikeouts and home runs. High/Low values often indicate bad/good luck.' },
+  'LOB%': { name: 'Left On Base %', desc: 'The percentage of baserunners a pitcher strands on base without scoring.' },
+
+  // --- ADVANCED STATS ---
+  'SIERA': { name: 'Skill-Interactive ERA', desc: 'Estimates ERA by focusing on balls in play and strikeout rates. Generally considered the most accurate predictive ERA estimator.' },
+  'FIP': { name: 'Fielding Independent Pitching', desc: 'Estimates what a pitcher\'s ERA would be if they experienced league average defense and luck.' },
+  'xFIP': { name: 'Expected FIP', desc: 'Similar to FIP, but normalizes the pitcher\'s Home Run to Fly Ball ratio to the league average.' },
+  'Stuff+': { name: 'Stuff Plus', desc: 'Grades the physical characteristics of a pitch (velo, movement, release). 100 is league average.' },
+  'Location+': { name: 'Location Plus', desc: 'Grades the pitcher\'s ability to put the ball in advantageous zones. 100 is league average.' },
+  'Pitching+': { name: 'Pitching Plus', desc: 'A combination of Stuff+ and Location+ to grade overall process. 100 is league average.' },
+  'BotStf': { name: 'Robot Stuff Grade', desc: 'Automated 20-80 scouting scale assessment of raw stuff.' },
+  'BotCmd': { name: 'Robot Command Grade', desc: 'Automated 20-80 scouting scale assessment of command.' },
+  'BotOvr': { name: 'Robot Overall', desc: 'Overall automated scouting grade (20-80 scale).' },
+  'vFA (sc)': { name: 'Fastball Velocity', desc: 'Average velocity of the fastball.' },
+  'vSL (sc)': { name: 'Slider Velocity', desc: 'Average velocity of the slider.' },
+  'vCU (sc)': { name: 'Curveball Velocity', desc: 'Average velocity of the curveball.' },
+  'vCH (sc)': { name: 'Changeup Velocity', desc: 'Average velocity of the changeup.' },
+  'SwStr%': { name: 'Swinging Strike %', desc: 'The percentage of total pitches that induce a swing and a miss.' },
+  'CSW%': { name: 'Called + Swinging Strike %', desc: 'The percentage of pitches that are either called strikes or swinging strikes. Correlates highly with K%.' },
+  'HardHit%': { name: 'Hard Hit Rate', desc: 'Percentage of batted balls hit with an exit velocity of 95 mph or higher.' },
+  'Barrel%': { name: 'Barrel Rate', desc: 'Percentage of batted balls with the perfect combination of exit velocity and launch angle.' },
+  'GB%': { name: 'Ground Ball %', desc: 'Percentage of batted balls that are grounders.' },
+  'LD%': { name: 'Line Drive %', desc: 'Percentage of batted balls that are line drives.' },
+  'FB%': { name: 'Fly Ball %', desc: 'Percentage of batted balls that are fly balls.' },
+  'O-Swing%': { name: 'Chase Rate', desc: 'Percentage of pitches outside the zone that the batter swung at.' },
+  'Z-Swing%': { name: 'Zone Swing Rate', desc: 'Percentage of pitches inside the zone that the batter swung at.' },
+  'Contact%': { name: 'Contact Rate', desc: 'Percentage of swings that resulted in contact.' },
+  'Zone%': { name: 'Zone Rate', desc: 'Percentage of total pitches thrown inside the strike zone.' },
+  'WPA': { name: 'Win Probability Added', desc: 'The change in win probability caused by the pitcher\'s performance.' },
+  'RE24': { name: 'Run Expectancy 24', desc: 'Runs saved compared to an average pitcher based on the base/out state.' },
+  'gmLI': { name: 'Game Leverage Index', desc: 'Measures the pressure of the situations the pitcher faced. 1.0 is average pressure.' },
+  'Clutch': { name: 'Clutch Score', desc: 'How much better the pitcher performed in high leverage spots vs neutral spots.' },
+  'SD': { name: 'Standard Deviation', desc: 'Statistical variance in performance.' },
+  'MD': { name: 'Median Deviation', desc: 'Median variance in performance.' }
+};
 
 // --- HELPER COMPONENTS ---
 
@@ -42,7 +101,7 @@ const PlayerHeadshot = ({ mlbId, size = 'large' }) => {
   
   return (
     <div className={`headshot-wrapper ${size}`}>
-      <img src={url} alt="Player" className="headshot-img" onError={(e) => {e.target.src = 'https://midfield.mlbstatic.com/v1/people/0/headshot/67/current'}} />
+      <img loading="lazy" src={url} alt="Player" className="headshot-img" onError={(e) => {e.target.src = 'https://midfield.mlbstatic.com/v1/people/0/headshot/67/current'}} />
     </div>
   )
 }
@@ -50,7 +109,7 @@ const PlayerHeadshot = ({ mlbId, size = 'large' }) => {
 const TeamLogo = ({ team }) => {
   let code = team ? TEAM_LOGOS[team] || team.toLowerCase() : 'mlb';
   if (code === 'was') code = 'wsh'; 
-  return <img src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/mlb/500/${code}.png&w=100&h=100`} alt={team} className="team-logo" onError={(e) => e.target.style.display = 'none'} />
+  return <img loading="lazy" src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/mlb/500/${code}.png&w=100&h=100`} alt={team} className="team-logo" onError={(e) => e.target.style.display = 'none'} />
 }
 
 const PercentileBar = ({ label, value, percentile, suffix = '' }) => {
@@ -64,15 +123,51 @@ const PercentileBar = ({ label, value, percentile, suffix = '' }) => {
   )
 }
 
-// --- PLAYER LIST VIEW ---
+// --- SUB-VIEWS ---
+
+const GlossaryView = () => {
+  const categories = useMemo(() => [
+    { title: 'Basic Metrics', keys: COLUMN_CATEGORIES.basic },
+    { title: 'Advanced Sabermetrics', keys: COLUMN_CATEGORIES.advanced }
+  ], []);
+
+  return (
+    <div className="glossary-container fade-in">
+      <div className="glossary-header">
+        <h2>Statistical Glossary</h2>
+        <p>Understanding the metrics that drive modern pitcher evaluation.</p>
+      </div>
+
+      {categories.map(cat => (
+        <div key={cat.title} className="glossary-section">
+          <h3>{cat.title}</h3>
+          <div className="glossary-grid">
+            {cat.keys.map(key => {
+              const def = METRIC_DEFINITIONS[key] || { name: key, desc: 'Standard statistical metric.' };
+              return (
+                <div key={key} className="glossary-card">
+                  <div className="card-top">
+                    <strong>{key}</strong>
+                    {['kWAR', 'Stuff+', 'SIERA'].includes(key) && <span className="key-badge">KEY</span>}
+                  </div>
+                  <div className="card-name">{def.name}</div>
+                  <p>{def.desc}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const PlayerListView = ({ 
   pitchers, viewMode, setViewMode, selectedPlayer, handleCardClick, 
   showAdvanced, setShowAdvanced, similarPlayers, isCompareMode, 
-  setIsCompareMode, setCompareTarget,
-  visibleCols, toggleColModal,
-  sortConfig, handleSort, 
-  page, rowsPerPage, totalPlayers, handleChangePage, handleChangeRowsPerPage 
+  setIsCompareMode, setCompareTarget, visibleCols, toggleColModal,
+  sortConfig, handleSort, page, rowsPerPage, totalPlayers, 
+  handleChangePage, handleChangeRowsPerPage 
 }) => {
   
   const formatCell = (player, col) => {
@@ -109,13 +204,19 @@ const PlayerListView = ({
   return (
     <div className="fade-in">
       <div className="sub-controls">
-        <div className="view-toggle">
-          <button className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')}>⊞ Grid</button>
-          <button className={viewMode === 'table' ? 'active' : ''} onClick={() => setViewMode('table')}>≡ Table</button>
+        {/* NEW SEGMENTED CONTROL BUTTONS */}
+        <div className="view-toggle-group">
+          <button className={`toggle-option ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')} aria-label="Grid View">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            <span>Grid</span>
+          </button>
+          <button className={`toggle-option ${viewMode === 'table' ? 'active' : ''}`} onClick={() => setViewMode('table')} aria-label="Table View">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            <span>Table</span>
+          </button>
         </div>
         
         {viewMode === 'table' && <button className="toggle-btn" onClick={toggleColModal}>⚙️ Select Stats</button>}
-        
         <button className={`toggle-btn ${showAdvanced ? 'active' : ''}`} onClick={() => setShowAdvanced(!showAdvanced)}>{showAdvanced ? 'Stats: On' : 'Stats: Off'}</button>
       </div>
 
@@ -190,7 +291,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   
   // Navigation
-  const [activeTab, setActiveTab] = useState('players') // 'players', 'scatter', 'network', 'lab'
+  const [activeTab, setActiveTab] = useState('players') 
   const [viewMode, setViewMode] = useState('grid')
 
   // Filters
@@ -217,12 +318,14 @@ function App() {
   const [compareSearch, setCompareSearch] = useState('')
   const [compareResults, setCompareResults] = useState([])
 
+  // Initial Fetch: Archetypes
   useEffect(() => {
-    // FIXED: Removed backtick ` inside the URL string
-    axios.get('https://pitch-lab-api.onrender.com/archetypes').then(response => setArchetypeList(response.data)).catch(console.error)
+    axios.get(`${API_BASE_URL}/archetypes`)
+      .then(response => setArchetypeList(response.data))
+      .catch(console.error)
   }, [])
 
-  // MAIN DATA FETCH
+  // Main Data Fetch
   useEffect(() => {
     setLoading(true)
     const params = { 
@@ -231,38 +334,50 @@ function App() {
       limit: rowsPerPage,
       skip: page * rowsPerPage
     }
-    if (search) params.search = search
-    if (archetype && archetype !== 'All Archetypes') params.archetype = archetype
+    
+    // Clean inputs before sending
+    if (search && search.trim()) params.search = search.trim();
+    if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
 
     // Fetch all players for Charts/Lab view (no pagination)
-    if (activeTab !== 'players') {
+    if (activeTab !== 'players' && activeTab !== 'info') {
         params.limit = 1000; 
         params.skip = 0;
     }
 
-    // FIXED: Removed backtick ` inside the URL string
-    axios.get('https://pitch-lab-api.onrender.com/pitchers', { params })
+    // Skip fetch for Info tab
+    if (activeTab === 'info') {
+        setLoading(false);
+        return;
+    }
+
+    axios.get(`${API_BASE_URL}/pitchers`, { params })
       .then(response => { 
         setPitchers(response.data.data) 
         setTotalPlayers(response.data.total)
         setLoading(false) 
       })
-      .catch(console.error)
+      .catch(err => {
+        console.error("API Error:", err);
+        setLoading(false);
+      })
   }, [search, archetype, sortConfig, page, rowsPerPage, activeTab]) 
 
   // Reset page when filters change
   useEffect(() => { setPage(0) }, [search, archetype])
 
-  // Comparison Search
+  // Comparison Search (Debounced)
   useEffect(() => {
     if (!isCompareMode || !compareSearch) return
     const delayDebounce = setTimeout(() => {
-      // FIXED: Removed backtick ` inside the URL string
-      axios.get('https://pitch-lab-api.onrender.com/pitchers', { params: { search: compareSearch, limit: 5 } }).then(res => setCompareResults(res.data))
+      axios.get(`${API_BASE_URL}/pitchers`, { params: { search: compareSearch, limit: 5 } })
+        .then(res => setCompareResults(res.data))
+        .catch(console.error)
     }, 300)
     return () => clearTimeout(delayDebounce)
   }, [compareSearch, isCompareMode])
 
+  // --- Handlers ---
   const handleSort = (key) => {
     let direction = 'desc'
     if (sortConfig.key === key && sortConfig.direction === 'desc') {
@@ -279,7 +394,9 @@ function App() {
   const handleCardClick = (player) => {
     if (selectedPlayer?.Name === player.Name) { setSelectedPlayer(null); return; }
     setSelectedPlayer(player); setSimilarPlayers([])
-    axios.get(`https://pitch-lab-api.onrender.com/pitchers/${player.Name}/similar`).then(r => setSimilarPlayers(r.data))
+    axios.get(`${API_BASE_URL}/pitchers/${player.Name}/similar`)
+      .then(r => setSimilarPlayers(r.data))
+      .catch(console.error)
   }
 
   return (
@@ -292,6 +409,7 @@ function App() {
             <button className={`nav-tab ${activeTab === 'scatter' ? 'active' : ''}`} onClick={() => setActiveTab('scatter')}>Scatter Plots</button>
             <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
             <button className={`nav-tab ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => setActiveTab('lab')}>Pitch Lab 3D</button>
+            <button className={`nav-tab ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Info & Glossary</button>
           </div>
         </div>
 
@@ -319,51 +437,60 @@ function App() {
       </header>
 
       <main className="main-content">
-        {activeTab === 'players' && (
-            <PlayerListView 
-                pitchers={pitchers} 
-                viewMode={viewMode} 
-                setViewMode={setViewMode}
-                selectedPlayer={selectedPlayer} 
-                handleCardClick={handleCardClick}
-                showAdvanced={showAdvanced} 
-                setShowAdvanced={setShowAdvanced}
-                similarPlayers={similarPlayers} 
-                isCompareMode={isCompareMode}
-                setIsCompareMode={setIsCompareMode} 
-                setCompareTarget={setCompareTarget}
-                visibleCols={visibleCols} 
-                toggleColModal={() => setShowColModal(true)}
-                sortConfig={sortConfig} 
-                handleSort={handleSort}
-                page={page} 
-                rowsPerPage={rowsPerPage} 
-                totalPlayers={totalPlayers}
-                handleChangePage={setPage} 
-                handleChangeRowsPerPage={(n) => { setRowsPerPage(n); setPage(0); }}
-            />
-        )}
-        
-        {activeTab === 'scatter' && <PerformanceScatter data={pitchers} />}        
-        {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
-
-        {activeTab === 'lab' && (
-          <div style={{ display: 'flex', height: '700px', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
-            <div style={{ flex: 1, position: 'relative' }}>
-                <PitchLab 
-                    player={selectedPlayer} 
-                    allPlayers={pitchers}
-                    setPlayer={setSelectedPlayer}
+        {loading && activeTab !== 'info' ? (
+          <div className="loading-state">Loading Data...</div>
+        ) : (
+          <>
+            {activeTab === 'players' && (
+                <PlayerListView 
+                    pitchers={pitchers} 
+                    viewMode={viewMode} 
+                    setViewMode={setViewMode}
+                    selectedPlayer={selectedPlayer} 
+                    handleCardClick={handleCardClick}
+                    showAdvanced={showAdvanced} 
+                    setShowAdvanced={setShowAdvanced}
+                    similarPlayers={similarPlayers} 
+                    isCompareMode={isCompareMode}
+                    setIsCompareMode={setIsCompareMode} 
+                    setCompareTarget={setCompareTarget}
+                    visibleCols={visibleCols} 
+                    toggleColModal={() => setShowColModal(true)}
+                    sortConfig={sortConfig} 
+                    handleSort={handleSort}
+                    page={page} 
+                    rowsPerPage={rowsPerPage} 
+                    totalPlayers={totalPlayers}
+                    handleChangePage={setPage} 
+                    handleChangeRowsPerPage={(n) => { setRowsPerPage(n); setPage(0); }}
                 />
-            </div>
+            )}
             
-            <div style={{ borderLeft: '1px solid #334155' }}>
-                <EducationPanel />
-            </div>
-          </div>
+            {activeTab === 'scatter' && <PerformanceScatter data={pitchers} />}        
+            {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
+
+            {activeTab === 'lab' && (
+              <div style={{ display: 'flex', height: '700px', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    <PitchLab 
+                        player={selectedPlayer} 
+                        allPlayers={pitchers}
+                        setPlayer={setSelectedPlayer}
+                    />
+                </div>
+                <div style={{ borderLeft: '1px solid #334155' }}>
+                    <EducationPanel />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'info' && <GlossaryView />}
+          </>
         )}
       </main>
 
+      {/* --- MODALS --- */}
+      
       {showColModal && (
         <div className="modal-overlay" onClick={() => setShowColModal(false)}>
           <div className="modal-content col-modal" onClick={e => e.stopPropagation()}>
