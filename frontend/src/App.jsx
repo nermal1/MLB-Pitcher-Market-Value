@@ -3,7 +3,6 @@ import axios from 'axios'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
-// Ensure these files exist in your project structure
 import { PitchLab } from './pitchLab';
 import { ChartsView, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
@@ -277,7 +276,6 @@ const GlossaryView = () => {
 
       <div className="glossary-header">
         <h2>Statistical Glossary</h2>
-        <p>Click any card below (or the menu icon ☰) to open the details sidebar.</p>
       </div>
 
       {categories.map(cat => (
@@ -341,6 +339,7 @@ const GlossaryView = () => {
                           </div>
                         )}
 
+                        {/* UPDATED LAYOUT: Usage & Flaws Blocks */}
                         <div className="usage-flaws-section">
                             <div className="uf-block">
                                 <div className="tag-badge tag-good">Usage</div>
@@ -492,8 +491,6 @@ function App() {
   const [archetype, setArchetype] = useState('')
   const [archetypeList, setArchetypeList] = useState([])
   const [teamFilter, setTeamFilter] = useState('All'); // NEW TEAM STATE
-  
-  // Memoize team list to prevent re-renders
   const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
   
   // Sorting & Pagination
@@ -524,11 +521,7 @@ function App() {
 
   // Main Data Fetch
   useEffect(() => {
-    // Optimization: Don't fetch player list if we are just looking at Glossary
-    if (activeTab === 'info') {
-      setLoading(false);
-      return;
-    }
+    if (activeTab === 'info') { setLoading(false); return; }
 
     setLoading(true)
     const params = { 
@@ -540,31 +533,40 @@ function App() {
     
     if (search && search.trim()) params.search = search.trim();
     if (archetype && archetype !== 'All Archetypes') params.archetype = archetype;
-    // Add Team Filter to API Params
-    if (teamFilter && teamFilter !== 'All') params.team = teamFilter;
-
-    // Fetch all players for Charts/Lab view (no pagination)
-    if (activeTab !== 'players') {
-        params.limit = 1000; 
+    
+    // --- KEY LOGIC CHANGE ---
+    // 1. If we are on 'Charts' tab, we want GLOBAL data (all teams), so we ignore the teamFilter.
+    // 2. If we are on 'Players' tab and a team is selected, we fetch ALL players (limit=1000) 
+    //    and filter locally to ensure the full roster shows up.
+    
+    if (activeTab === 'charts' || activeTab === 'network' || activeTab === 'lab') {
+        params.limit = 1000;
         params.skip = 0;
+        // Do NOT add params.team here, so charts see everyone.
+    } else {
+        // We are on 'players' tab
+        if (teamFilter !== 'All') {
+            params.limit = 1000; // Fetch everyone to ensure we catch all team members
+            params.skip = 0;
+            // We intentionally do NOT pass params.team to the API because we will filter locally 
+            // to ensure we get 100% of the roster, avoiding API pagination issues.
+        }
     }
 
     axios.get(`${API_BASE_URL}/pitchers`, { params })
       .then(response => { 
         let data = response.data.data;
         
-        // --- CRITICAL FIX: CLIENT-SIDE FILTERING FALLBACK ---
-        // If the API ignores the 'team' param and returns everyone, we filter locally here.
-        if (teamFilter !== 'All' && data.length > 0) {
-            // Check if the API returned filtered data or if we need to filter manually
-            const needsClientFilter = data.some(p => p.Team !== teamFilter);
-            if (needsClientFilter) {
-               data = data.filter(p => p.Team === teamFilter);
-            }
+        // --- CLIENT-SIDE FILTERING ---
+        // If we are on the players tab and a team is selected, filtering locally guarantees results.
+        if (activeTab === 'players' && teamFilter !== 'All') {
+            data = data.filter(p => p.Team === teamFilter);
+            setTotalPlayers(data.length); // Update total count to reflect filtered set
+        } else if (activeTab === 'players') {
+            setTotalPlayers(response.data.total);
         }
 
         setPitchers(data);
-        setTotalPlayers(response.data.total); // Note: Total might be inaccurate if client-filtering
         setLoading(false);
       })
       .catch(err => {
@@ -615,7 +617,7 @@ function App() {
           <h1>⚾ MLB Pitcher Valuation 2025</h1>
           <div className="nav-tabs">
             <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => setActiveTab('players')}>Player Cards</button>
-            <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>            
+            <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>
             <button className={`nav-tab ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}>Similarity Network</button>
             <button className={`nav-tab ${activeTab === 'lab' ? 'active' : ''}`} onClick={() => setActiveTab('lab')}>Pitch Lab 3D</button>
             <button className={`nav-tab ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Info & Glossary</button>
@@ -626,7 +628,6 @@ function App() {
           <div className="controls">
             <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
             
-            {/* TEAM FILTER DROPDOWN */}
             <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}>
               <option value="All">All Teams</option>
               {teamList.map(t => <option key={t} value={t}>{t}</option>)}
@@ -683,6 +684,7 @@ function App() {
                 />
             )}
             
+            {/* Charts View now gets independent data in effect, but logic above handles it */}
             {activeTab === 'charts' && <ChartsView data={pitchers} />}        
             {activeTab === 'network' && <SimilarityNetwork allPlayers={pitchers} />}
 
