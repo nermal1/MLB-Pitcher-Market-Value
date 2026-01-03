@@ -685,7 +685,7 @@ function App() {
             {activeTab === 'network' && <SimilarityNetwork allPlayers={globalData} />}
 
             {activeTab === 'lab' && (
-              <div style={{ display: 'flex', height: '700px', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
+              <div style={{ display: 'flex', height: 'calc(100vh - 120px)', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
                 <div style={{ flex: 1, position: 'relative' }}>
                     <PitchLab 
                         player={selectedPlayer} 

@@ -14,7 +14,6 @@ const PITCH_NAMES = {
 };
 
 // --- CAMERA CONFIGURATION ---
-// "static: false" means the user can always rotate/zoom
 const CAMERA_VIEWS = {
     catcher: { pos: [-0.0, 2.0, -4.5], target: [0.0, 3.5, 60.5], static: false }, 
     pitcher: { pos: [-2.5, 6.0, 64.0], target: [0.0, 1.5, 0.0], static: false },
@@ -144,21 +143,16 @@ const AnimatedBall = ({ pitch, isPlaying, timeOffset, target }) => {
     return <mesh ref={meshRef} visible={false}><sphereGeometry args={[0.12]} /><meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.6} /></mesh>;
 };
 
-// --- UPDATED CAMERA RIG (Fixes Initial Load + Movability) ---
 const CameraRig = ({ view }) => {
     const { camera, controls } = useThree();
     const controlsRef = useRef();
 
-    // Force update whenever view changes OR on mount
     useEffect(() => {
         const config = CAMERA_VIEWS[view];
         if (config && controlsRef.current) {
-            // Smoothly move camera to new position
             camera.position.set(...config.pos);
             controlsRef.current.target.set(...config.target);
-            
-            // Enable controls if config says so (or always enable for now based on request)
-            controlsRef.current.enabled = true; 
+            controlsRef.current.enabled = true; // Always enable controls
             controlsRef.current.update();
         }
     }, [view, camera]);
@@ -267,10 +261,10 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
     }, [activePitchData, pitchTargets]);
 
     return (
-        <div className="pitch-lab-container fade-in" style={{ height: '700px', background: '#0f172a', position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
+        <div className="pitch-lab-container fade-in" style={{ height: '100%', background: '#0f172a', position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155', display: 'flex' }}>
             
-            {/* --- LEFT SIDEBAR: CONTROLS --- */}
-            <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '260px', background: 'rgba(15, 23, 42, 0.95)', borderRight: '1px solid #334155', padding: '20px', zIndex: 20, overflowY: 'auto' }}>
+            {/* --- LEFT SIDEBAR: CONTROLS (Updated) --- */}
+            <div style={{ width: '260px', background: 'rgba(15, 23, 42, 0.95)', borderRight: '1px solid #334155', padding: '20px', zIndex: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                 <h2 style={{margin: '0 0 15px 0', fontSize: '1.4rem', color: 'white'}}>Pitch Lab <span style={{color: '#a855f7'}}>3D</span></h2>
                 
                 {/* Search */}
@@ -293,7 +287,7 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
 
                 {/* Arsenal Toggles */}
                 {player && (
-                    <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '8px', flex: 1}}>
                         <div style={{fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px'}}>Arsenal</div>
                         {arsenal.map(p => (
                             <div key={p.code} style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
@@ -312,31 +306,32 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                         ))}
                     </div>
                 )}
+
+                {/* SLIDER MOVED HERE */}
+                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', color: '#94a3b8', fontSize: '0.8rem' }}>
+                        <span>Playback Speed</span>
+                        <span>{(playbackSpeed * 100).toFixed(0)}%</span>
+                    </div>
+                    <input 
+                        type="range" min="0.05" max="1.0" step="0.05" value={playbackSpeed} 
+                        onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))} 
+                        style={{ width: '100%', accentColor: '#22c55e', cursor: 'pointer' }} 
+                    />
+                </div>
+
+                {/* Main Action Button */}
+                <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
+                    <button onClick={() => setIsPlaying(true)} disabled={!player}
+                        style={{flex: 1, padding: '12px', background: isPlaying ? '#ef4444' : '#22c55e', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', opacity: player ? 1 : 0.5}}>
+                        {isPlaying ? 'Replaying...' : 'Throw'}
+                    </button>
+                    <button onClick={() => setShowDecisionPoint(!showDecisionPoint)} style={{padding: '12px', background: showDecisionPoint ? '#ef4444' : '#475569', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer'}} title="Toggle Tunnel">🛑</button>
+                </div>
             </div>
 
             {/* --- RIGHT HUD --- */}
             <PitchHUD activePitches={activePitchData} isLefty={isLefty} />
-
-            {/* --- BOTTOM CONTROLS (RESTORED SLIDER) --- */}
-            <div style={{ position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', background: 'rgba(15,23,42,0.9)', padding: '15px 25px', borderRadius: '16px', border: '1px solid #334155', zIndex: 40, marginLeft: '130px' }}>
-                
-                {/* Speed Slider */}
-                <div style={{display: 'flex', alignItems: 'center', gap: '15px', width: '100%', marginBottom: '5px'}}>
-                    <span style={{fontSize: '0.75rem', color: '#94a3b8', width: '60px'}}>Speed: {(playbackSpeed * 100).toFixed(0)}%</span>
-                    <input type="range" min="0.05" max="1.0" step="0.05" value={playbackSpeed} onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))} 
-                        style={{accentColor: '#22c55e', flex: 1, height: '4px', cursor: 'pointer'}} />
-                </div>
-
-                <div style={{display: 'flex', gap: '10px'}}>
-                    <button onClick={() => { setIsPlaying(true); }} disabled={!player}
-                        style={{ padding: '10px 40px', background: isPlaying ? '#ef4444' : '#22c55e', color: 'white', border: 'none', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.3)', minWidth: '160px', opacity: player ? 1 : 0.5 }}>
-                        {isPlaying ? 'REPLAYING...' : 'THROW PITCH'}
-                    </button>
-                    <button onClick={() => setShowDecisionPoint(!showDecisionPoint)} style={{ padding: '10px', background: showDecisionPoint ? '#ef4444' : '#475569', color: 'white', border: 'none', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }} title="Toggle Tunnel Box">
-                        🛑
-                    </button>
-                </div>
-            </div>
 
             {/* --- BOTTOM RIGHT CAMERA CONTROLS --- */}
             <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 20, display: 'flex', gap: '5px', background: 'rgba(15,23,42,0.9)', padding: '5px', borderRadius: '8px', border: '1px solid #334155' }}>
@@ -350,40 +345,42 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
 
             {/* --- CENTER ALERT (Editing Mode) --- */}
             {editingPitch && (
-                <div style={{position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 30, background: '#f59e0b', color: 'black', padding: '8px 16px', borderRadius: '20px', fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', marginLeft: '130px'}}>
+                <div style={{position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 30, background: '#f59e0b', color: 'black', padding: '8px 16px', borderRadius: '20px', fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'}}>
                     Click Strike Zone to place {editingPitch}
                 </div>
             )}
 
             {/* --- 3D CANVAS --- */}
-            <Canvas style={{ marginLeft: '260px', width: 'calc(100% - 260px)' }}>
-                <PerspectiveCamera makeDefault fov={40} />
-                <CameraRig view={view} />
-                <ambientLight intensity={0.8} />
-                <pointLight position={[10, 20, 10]} intensity={1.2} />
-                
-                <Grid position={[0, 0, 30]} args={[40, 80]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={50} infiniteGrid />
-                <Mound />
-                <StrikeZone />
-                {showDecisionPoint && <DecisionPointWall />}
-                {showDecisionPoint && tunnelMetric && <TunnelLabel metric={tunnelMetric} />}
-                <InteractiveZone onSelectTarget={handleTargetUpdate} editingPitch={editingPitch} />
+            <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+                <Canvas>
+                    <PerspectiveCamera makeDefault fov={40} />
+                    <CameraRig view={view} />
+                    <ambientLight intensity={0.8} />
+                    <pointLight position={[10, 20, 10]} intensity={1.2} />
+                    
+                    <Grid position={[0, 0, 30]} args={[40, 80]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={50} infiniteGrid />
+                    <Mound />
+                    <StrikeZone />
+                    {showDecisionPoint && <DecisionPointWall />}
+                    {showDecisionPoint && tunnelMetric && <TunnelLabel metric={tunnelMetric} />}
+                    <InteractiveZone onSelectTarget={handleTargetUpdate} editingPitch={editingPitch} />
 
-                {player && (
-                    <>
-                        <ModernArm isLefty={isLefty} targetRelease={activePitchData[0]?.release} />
-                        {activePitchData.map(pitch => {
-                            const target = pitchTargets[pitch.code] || { x: 0, y: 2.5, z: 0 };
-                            return (
-                                <group key={pitch.code}>
-                                    <StaticTrail pitch={pitch} target={target} />
-                                    <AnimatedBall pitch={pitch} isPlaying={isPlaying} timeOffset={animTime} target={target} />
-                                </group>
-                            )
-                        })}
-                    </>
-                )}
-            </Canvas>
+                    {player && (
+                        <>
+                            <ModernArm isLefty={isLefty} targetRelease={activePitchData[0]?.release} />
+                            {activePitchData.map(pitch => {
+                                const target = pitchTargets[pitch.code] || { x: 0, y: 2.5, z: 0 };
+                                return (
+                                    <group key={pitch.code}>
+                                        <StaticTrail pitch={pitch} target={target} />
+                                        <AnimatedBall pitch={pitch} isPlaying={isPlaying} timeOffset={animTime} target={target} />
+                                    </group>
+                                )
+                            })}
+                        </>
+                    )}
+                </Canvas>
+            </div>
         </div>
     );
 };
