@@ -528,7 +528,11 @@ function App() {
             let team = p.Team;
             if (team === 'CHW') team = 'CWS'; 
             if (team === 'ATH') team = 'OAK'; 
-            if (team === 'WAS') team = 'WSH'; 
+            if (team === 'WAS') team = 'WSH';
+            if (team === 'TBR') team = 'TB'; 
+            if (team === 'KCR') team = 'KC';
+            if (team === 'SDP') team = 'SD';
+            if (team === 'SFG') team = 'SF';
             return { ...p, Team: team };
         });
         setGlobalData(normalized);
