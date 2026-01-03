@@ -37,22 +37,21 @@ const DecisionPointWall = () => (
 const TunnelLabel = ({ metric }) => {
     if (!metric) return null;
     const color = metric.isGood ? '#4ade80' : '#f87171'; 
-    const radius = (parseFloat(metric.dist) / 12 / 2) + 0.15; 
     
     return (
         <group position={[metric.pos.x, metric.pos.y, DECISION_POINT_Z]}>
             <Billboard follow={true}>
-                <Text fontSize={1.2} color={color} outlineWidth={0.05} outlineColor="#000000" anchorY="bottom" position={[0, radius + 0.2, 0]}>
+                <Text fontSize={1.2} color={color} outlineWidth={0.05} outlineColor="#000000" anchorY="bottom" position={[0, (parseFloat(metric.dist) / 12 / 2) + 0.35, 0]}>
                     {metric.dist}"
                 </Text>
             </Billboard>
-            <mesh><ringGeometry args={[radius, radius + 0.05, 64]} /><meshBasicMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.8} /></mesh>
-            <mesh><circleGeometry args={[radius, 64]} /><meshBasicMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.15} /></mesh>
+            <mesh><ringGeometry args={[(parseFloat(metric.dist) / 12 / 2) + 0.15, (parseFloat(metric.dist) / 12 / 2) + 0.2, 64]} /><meshBasicMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.8} /></mesh>
+            <mesh><circleGeometry args={[(parseFloat(metric.dist) / 12 / 2) + 0.15, 64]} /><meshBasicMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.15} /></mesh>
         </group>
     );
 };
 
-const PitchHUD = ({ activePitches, isLefty }) => {
+const PitchHUD = ({ activePitches }) => {
     if (!activePitches || activePitches.length === 0) return null;
     const displayPitches = activePitches.slice(0, 2); 
 
@@ -160,7 +159,7 @@ const CameraRig = ({ view }) => {
     return <OrbitControls ref={controlsRef} enablePan={true} zoomSpeed={0.5} rotateSpeed={0.5} />;
 };
 
-const InteractiveZone = ({ onSelectTarget, editingPitch }) => {
+const InteractiveZone = ({ onSelectTarget }) => {
     return (
         <mesh 
             visible={false} position={[0, 2.5, 0]}
@@ -313,7 +312,7 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                         <span>Speed</span>
                         <span>{(playbackSpeed * 100).toFixed(0)}%</span>
                     </div>
-                    {/* FIXED: Slider constrained to 100% width with border-box to prevent overflow */}
+                    {/* FIXED: Slider constrained */}
                     <input 
                         type="range" min="0.05" max="1.0" step="0.05" value={playbackSpeed} 
                         onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))} 

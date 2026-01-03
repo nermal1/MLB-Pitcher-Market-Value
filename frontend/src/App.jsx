@@ -685,20 +685,24 @@ function App() {
             {activeTab === 'network' && <SimilarityNetwork allPlayers={globalData} />}
 
           {activeTab === 'lab' && (
-            <div style={{ display: 'flex', height: '100%', width: '100%', background: '#0f172a', borderTop: '1px solid #334155' }}>
+          // ADDED: Full border and border-radius here to frame the entire tool
+            <div style={{ display: 'flex', height: '100%', width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', overflow: 'hidden' }}>
+    
+            {/* Pitch Lab (Left + Center) */}
               <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
                 <PitchLab 
-                player={selectedPlayer} 
-                allPlayers={globalData}
-                setPlayer={setSelectedPlayer}
+                  player={selectedPlayer} 
+                  allPlayers={globalData}
+                  setPlayer={setSelectedPlayer}
                 />
               </div>
-              <div style={{ width: '300px', borderLeft: '1px solid #334155', flexShrink: 0, background: '#0f172a', zIndex: 50 }}>
-                <EducationPanel />
-              </div>
+    
+            {/* Education Panel (Right) */}
+            <div style={{ width: '300px', borderLeft: '1px solid #334155', flexShrink: 0, background: '#0f172a', zIndex: 50 }}>
+              <EducationPanel />
             </div>
-          )}
-
+          </div>
+        )}
             {activeTab === 'info' && <GlossaryView />}
           </>
         )}
