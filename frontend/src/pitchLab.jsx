@@ -159,14 +159,43 @@ const CameraRig = ({ view }) => {
     return <OrbitControls ref={controlsRef} enablePan={true} zoomSpeed={0.5} rotateSpeed={0.5} />;
 };
 
-const InteractiveZone = ({ onSelectTarget }) => {
+// --- INTERACTIVE ZONE FIX ---
+// The plane must be visible (but transparent) to intercept clicks.
+const InteractiveZone = ({ onSelectTarget, editingPitch }) => {
+    // Only render the helper if we are currently editing a pitch
+    if (!editingPitch) return null;
+
     return (
-        <mesh 
-            visible={false} position={[0, 2.5, 0]}
-            onClick={(e) => { e.stopPropagation(); if (onSelectTarget) onSelectTarget(e.point); }}
-        >
-            <planeGeometry args={[4, 4]} /><meshBasicMaterial color="red" />
-        </mesh>
+        <group position={[0, 2.5, 0]}>
+            {/* Visual Grid to help aiming */}
+            <Grid 
+                args={[4, 4]} 
+                cellSize={0.5} 
+                cellThickness={1} 
+                cellColor={new THREE.Color('#f59e0b')} 
+                sectionSize={1} 
+                sectionThickness={1} 
+                sectionColor={new THREE.Color('#f59e0b')} 
+                fadeDistance={10} 
+                rotation={[Math.PI / 2, 0, 0]} // Rotate to face camera
+            />
+            
+            {/* Invisible Clickable Plane */}
+            <mesh 
+                onClick={(e) => { 
+                    e.stopPropagation(); 
+                    if (onSelectTarget) onSelectTarget(e.point); 
+                }}
+            >
+                <planeGeometry args={[4, 4]} />
+                <meshBasicMaterial 
+                    color="#f59e0b" 
+                    transparent 
+                    opacity={0.15} // Slight opacity so user sees where they can click
+                    side={THREE.DoubleSide} 
+                />
+            </mesh>
+        </group>
     );
 };
 
