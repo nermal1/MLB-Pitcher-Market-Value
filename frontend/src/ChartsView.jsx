@@ -4,7 +4,6 @@ import {
   Tooltip, ResponsiveContainer, Label, Legend, Cell 
 } from 'recharts';
 import ForceGraph2D from 'react-force-graph-2d';
-import axios from 'axios';
 
 // ==========================================
 // 1. HELPER: TEAM DATA AGGREGATION
@@ -14,6 +13,8 @@ const aggregateTeamData = (players, metric) => {
 
   players.forEach(p => {
     if (!p.Team) return;
+    
+    // Initialize team object if missing
     if (!teams[p.Team]) {
       teams[p.Team] = { 
         Team: p.Team, 
@@ -27,13 +28,20 @@ const aggregateTeamData = (players, metric) => {
 
     const val = parseFloat(p[metric]) || 0;
     
-    // Logic for COUNTING stats (Sum them up)
+    // Robust check for Starter position (fixes the "only relievers" bug)
+    const pos = p.Position ? p.Position.toLowerCase() : '';
+    const isStarter = pos.includes('start') || pos === 'sp';
+
+    // Logic for COUNTING stats (Sum them up: WAR, kWAR, Wins, etc.)
     if (['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
-      if (p.Position === 'Starter') teams[p.Team].StarterVal += val;
-      else teams[p.Team].RelieverVal += val;
+      if (isStarter) {
+          teams[p.Team].StarterVal += val;
+      } else {
+          teams[p.Team].RelieverVal += val;
+      }
       teams[p.Team].TotalVal += val;
     } 
-    // Logic for RATE stats (Weighted Average by IP)
+    // Logic for RATE stats (Weighted Average by IP: ERA, K%, Velo)
     else {
       const ip = parseFloat(p.IP) || 0;
       teams[p.Team].TotalIP += ip;
@@ -42,7 +50,7 @@ const aggregateTeamData = (players, metric) => {
   });
 
   return Object.values(teams).map(t => {
-    // Finalize Rate Stats calculation
+    // Finalize Rate Stats calculation (Weighted Sum / Total IP)
     if (!['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
       t.TotalVal = t.TotalIP > 0 ? t.WeightedSum / t.TotalIP : 0;
     }
@@ -145,7 +153,6 @@ const ScatterView = ({ data }) => {
           <span className="legend-item"><span className="dot red"></span> Overvalued</span>
       </div>
 
-      {/* Explicit Height for ResponsiveContainer to work */}
       <div className="scatter-wrapper" style={{ height: '600px', width: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -174,7 +181,6 @@ const TeamBarView = ({ data }) => {
 
   const chartData = useMemo(() => aggregateTeamData(data, metric), [data, metric]);
 
-  // Check if metric is summable (Stacked) or averagable (Single Bar)
   const isSummable = ['WAR', 'kWAR', 'W', 'L', 'IP'].includes(metric);
 
   return (
@@ -196,7 +202,6 @@ const TeamBarView = ({ data }) => {
         </div>
       </div>
 
-      {/* Explicit Height for ResponsiveContainer to work */}
       <div className="scatter-wrapper" style={{ height: '600px', width: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
@@ -235,12 +240,8 @@ const TeamBarView = ({ data }) => {
                 <Bar dataKey="RelieverVal" name="Relievers" stackId="a" fill="#38bdf8" />
               </>
             ) : (
-              <Bar dataKey="TotalVal" name="Team Average" fill="#a855f7">
-                 {/* Color gradient for averages */}
-                 {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index < 5 ? '#4ade80' : (index > 25 ? '#f87171' : '#a855f7')} />
-                 ))}
-              </Bar>
+              // Fixed Colors (No conditional Green/Red/Purple)
+              <Bar dataKey="TotalVal" name="Team Average" fill="#a855f7" />
             )}
           </BarChart>
         </ResponsiveContainer>
@@ -279,9 +280,6 @@ export const ChartsView = ({ data }) => {
 
 
 // ==========================================
-// 5. EXPORT: SIMILARITY NETWORK
-// ==========================================
-// ==========================================
 // 5. EXPORT: SIMILARITY NETWORK (Client-Side Logic)
 // ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
@@ -295,80 +293,82 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     
     const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
     
-    // Refs
     const imgCache = useRef({});
     const prevTargetRef = useRef(null);
 
     // --- 1. CLIENT-SIDE GRAPH CALCULATION ---
     const graphData = useMemo(() => {
-        if (!targetPlayer || !allPlayers.length) return { nodes: [], links: [] };
+        if (!allPlayers.length) return { nodes: [], links: [] };
 
-        // A. Find Target
+        // --- CASE A: NO TARGET (LANDSCAPE MODE) ---
+        // Show Top 50 Players by WAR if no specific player is selected
+        if (!targetPlayer) {
+            const topPlayers = [...allPlayers]
+                .sort((a, b) => b.WAR - a.WAR) // Sort by WAR
+                .slice(0, 50) // Top 50
+                .map(p => ({ ...p, id: p.Name, lastName: p.Name.split(' ').pop(), group: p.Archetype || 'Balanced', val: 10 })); // Standard size
+
+            // Create light links between similar players in the top 50
+            const landscapeLinks = [];
+            // Simple linking logic for landscape (link if archetype matches)
+            for (let i = 0; i < topPlayers.length; i++) {
+                for (let j = i + 1; j < topPlayers.length; j++) {
+                    if (topPlayers[i].Archetype === topPlayers[j].Archetype) {
+                        landscapeLinks.push({ source: topPlayers[i].id, target: topPlayers[j].id });
+                    }
+                }
+            }
+            return { nodes: topPlayers, links: landscapeLinks };
+        }
+
+        // --- CASE B: TARGET MODE (SIMILARITY SEARCH) ---
         const targetNode = allPlayers.find(p => p.Name === targetPlayer);
         if (!targetNode) return { nodes: [], links: [] };
 
-        // B. Calculate Statistics (Mean & StdDev) for selected metrics (Normalization)
-        // We need this so "ERA" (scale 0-5) doesn't get overpowered by "Stuff+" (scale 80-120)
+        // 1. Calculate Statistics (Mean & StdDev) for selected metrics
         const stats = {};
         selectedMetrics.forEach(m => {
-            // Filter out bad data points
             const values = allPlayers.map(p => parseFloat(p[m])).filter(v => !isNaN(v));
             if (values.length === 0) { stats[m] = { mean: 0, std: 1 }; return; }
-            
             const mean = values.reduce((a, b) => a + b, 0) / values.length;
             const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
             stats[m] = { mean, std: Math.sqrt(variance) || 1 };
         });
 
-        // C. Calculate Euclidean Distance
+        // 2. Calculate Euclidean Distance
         const neighbors = allPlayers
-            .filter(p => p.Name !== targetPlayer) // Exclude self
+            .filter(p => p.Name !== targetPlayer)
             .map(p => {
                 let distanceSq = 0;
                 let hasData = true;
-
                 selectedMetrics.forEach(m => {
                     const valA = parseFloat(targetNode[m]);
                     const valB = parseFloat(p[m]);
-                    
                     if (isNaN(valA) || isNaN(valB)) { hasData = false; return; }
-
-                    // Z-Score Normalization: (Value - Mean) / StdDev
                     const zA = (valA - stats[m].mean) / stats[m].std;
                     const zB = (valB - stats[m].mean) / stats[m].std;
-
                     distanceSq += Math.pow(zA - zB, 2);
                 });
-
                 if (!hasData) return null;
-
-                // Similarity Score (0 to 1 conversion based on distance)
                 const distance = Math.sqrt(distanceSq);
-                const similarity = Math.exp(-distance / 2); // Exponential decay for score (1.0 = identical)
-
-                return { ...p, id: p.Name, lastName: p.Name.split(' ').pop(), similarity, group: p.Archetype || 'Balanced' };
+                const similarity = Math.exp(-distance / 2);
+                return { ...p, id: p.Name, lastName: p.Name.split(' ').pop(), similarity, group: p.Archetype || 'Balanced', val: 10 };
             })
-            .filter(Boolean) // Remove nulls
-            .sort((a, b) => b.similarity - a.similarity) // Sort highest similarity first
+            .filter(Boolean)
+            .sort((a, b) => b.similarity - a.similarity)
             .slice(0, neighborCount);
 
-        // D. Construct Graph Object
         const targetGraphNode = { ...targetNode, id: targetNode.Name, lastName: targetNode.Name.split(' ').pop(), group: targetNode.Archetype, val: 20 };
         
         return {
             nodes: [targetGraphNode, ...neighbors],
-            links: neighbors.map(n => ({
-                source: targetGraphNode.id,
-                target: n.id,
-                similarity: n.similarity
-            }))
+            links: neighbors.map(n => ({ source: targetGraphNode.id, target: n.id, similarity: n.similarity }))
         };
 
     }, [targetPlayer, allPlayers, neighborCount, selectedMetrics]);
 
-    // --- 2. CAMERA & CACHE LOGIC ---
+    // --- 2. CAMERA & CACHE ---
     useEffect(() => {
-        // Pre-load images for new nodes
         graphData.nodes.forEach(node => {
             if (node.MLBID && !imgCache.current[node.MLBID]) {
                 const img = new Image();
@@ -377,7 +377,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         });
 
-        // Zoom Camera if Target Changes
+        // Only zoom if we have a target. If landscape mode, let it settle.
         if (fgRef.current && targetPlayer && targetPlayer !== prevTargetRef.current) {
             fgRef.current.d3Force('link').distance(50);
             fgRef.current.d3ReheatSimulation();
@@ -386,7 +386,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         prevTargetRef.current = targetPlayer;
     }, [graphData, targetPlayer]);
 
-    // Debounce Input
     useEffect(() => {
         const timer = setTimeout(() => {
             if (!inputValue) { setTargetPlayer(''); return; }
@@ -396,10 +395,10 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         return () => clearTimeout(timer);
     }, [inputValue, allPlayers]);
 
-    // --- 3. RENDERING HELPERS ---
+    // --- 3. RENDERING ---
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
-        const size = isTarget ? 16 : (targetPlayer ? 8 : 4); 
+        const size = isTarget ? 16 : (targetPlayer ? 8 : (globalScale > 1.5 ? 6 : 4)); // Resize logic
         
         const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
         ctx.fillStyle = colors[node.group] || '#94a3b8';
@@ -407,8 +406,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fill();
 
+        // Draw Image (Only if zoomed in or target)
         const shouldDrawImage = (globalScale > 1.2 || isTarget) && node.MLBID && imgCache.current[node.MLBID];
-        
         if (shouldDrawImage) {
             const img = imgCache.current[node.MLBID];
             if (img.complete) {
@@ -422,6 +421,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         }
 
+        // Draw Label
         if (isTarget || globalScale > 1.5) {
             const fontSize = isTarget ? 14 / globalScale : 10 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
@@ -430,7 +430,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 3 / globalScale;
-            
             const labelY = node.y + size + fontSize + 2;
             ctx.strokeText(node.lastName || node.id, node.x, labelY);
             ctx.fillText(node.lastName || node.id, node.x, labelY);
@@ -438,7 +437,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     }, [targetPlayer]);
 
     const nodePointerAreaPaint = useCallback((node, color, ctx) => {
-        const size = node.id === targetPlayer ? 16 : (targetPlayer ? 8 : 4);
+        const size = node.id === targetPlayer ? 16 : 8;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
@@ -447,7 +446,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     const toggleMetric = (m) => setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
 
-    // Sub-Component: Similarity Table (Integrated for cleaner code)
+    // Sub-Component: Similarity Table
     const SimilarityTable = ({ targetNode, neighbors, metrics }) => {
         if (!targetNode) return null;
         const formatVal = (val, metric) => {
@@ -538,7 +537,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             warmupTicks={100} cooldownTicks={0}
             nodeLabel="id"
             linkColor={() => 'rgba(71, 85, 105, 0.4)'}
-            linkWidth={link => (link.similarity * 3)}
+            linkWidth={link => (link.similarity ? link.similarity * 3 : 1)}
             backgroundColor="#0f172a"
             onNodeClick={node => { setInputValue(node.id); setTargetPlayer(node.id); }}
             enableNodeDrag={false} enableZoomInteraction={true}
