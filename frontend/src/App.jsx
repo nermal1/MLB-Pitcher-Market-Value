@@ -607,10 +607,10 @@ function App() {
   };
 
   return (
-    <div className="container">
+    <div className="container" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <header className="main-header">
         <div className="header-top">
-          <h1>⚾ MLB Pitcher Valuation 2025</h1>
+          <h1>MLB Pitcher Valuation 2025</h1>
           <div className="nav-tabs">
             <button className={`nav-tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => {setActiveTab('players'); setPage(0);}}>Player Cards</button>
             <button className={`nav-tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts & Trends</button>
@@ -650,7 +650,7 @@ function App() {
         )}
       </header>
 
-      <main className="main-content">
+      <main className="main-content" style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {loading && activeTab !== 'info' ? (
           <div className="loading-state">Loading Data...</div>
         ) : (
@@ -684,20 +684,20 @@ function App() {
             {activeTab === 'charts' && <ChartsView data={globalData} />}        
             {activeTab === 'network' && <SimilarityNetwork allPlayers={globalData} />}
 
-            {activeTab === 'lab' && (
-              <div style={{ display: 'flex', height: 'calc(100vh - 120px)', gap: '0', background: '#0f172a', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
-                <div style={{ flex: 1, position: 'relative' }}>
-                    <PitchLab 
-                        player={selectedPlayer} 
-                        allPlayers={globalData}
-                        setPlayer={setSelectedPlayer}
-                    />
-                </div>
-                <div style={{ borderLeft: '1px solid #334155' }}>
-                    <EducationPanel />
-                </div>
+          {activeTab === 'lab' && (
+            <div style={{ display: 'flex', height: '100%', width: '100%', background: '#0f172a', borderTop: '1px solid #334155' }}>
+              <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+                <PitchLab 
+                player={selectedPlayer} 
+                allPlayers={globalData}
+                setPlayer={setSelectedPlayer}
+                />
               </div>
-            )}
+              <div style={{ width: '300px', borderLeft: '1px solid #334155', flexShrink: 0, background: '#0f172a', zIndex: 50 }}>
+                <EducationPanel />
+              </div>
+            </div>
+          )}
 
             {activeTab === 'info' && <GlossaryView />}
           </>

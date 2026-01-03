@@ -152,7 +152,7 @@ const CameraRig = ({ view }) => {
         if (config && controlsRef.current) {
             camera.position.set(...config.pos);
             controlsRef.current.target.set(...config.target);
-            controlsRef.current.enabled = true; // Always enable controls
+            controlsRef.current.enabled = true; 
             controlsRef.current.update();
         }
     }, [view, camera]);
@@ -261,45 +261,45 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
     }, [activePitchData, pitchTargets]);
 
     return (
-        <div className="pitch-lab-container fade-in" style={{ height: '100%', background: '#0f172a', position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155', display: 'flex' }}>
+        <div className="pitch-lab-container fade-in" style={{ height: '100%', width: '100%', background: '#0f172a', position: 'relative', overflow: 'hidden', display: 'flex' }}>
             
-            {/* --- LEFT SIDEBAR: CONTROLS (Updated) --- */}
-            <div style={{ width: '260px', background: 'rgba(15, 23, 42, 0.95)', borderRight: '1px solid #334155', padding: '20px', zIndex: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                <h2 style={{margin: '0 0 15px 0', fontSize: '1.4rem', color: 'white'}}>Pitch Lab <span style={{color: '#a855f7'}}>3D</span></h2>
+            {/* --- LEFT SIDEBAR: COMPACT (220px) --- */}
+            <div style={{ width: '220px', background: 'rgba(15, 23, 42, 0.95)', borderRight: '1px solid #334155', padding: '15px', zIndex: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                <h2 style={{margin: '0 0 10px 0', fontSize: '1.2rem', color: 'white', whiteSpace: 'nowrap'}}>Pitch Lab <span style={{color: '#a855f7'}}>3D</span></h2>
                 
                 {/* Search */}
-                <div style={{marginBottom: '20px'}}>
+                <div style={{marginBottom: '15px'}}>
                     <input type="text" list="lab-players" placeholder="Search Pitcher..." value={search} onChange={handleSearch} 
-                        style={{width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #475569', background: '#1e293b', color: 'white', outline: 'none'}} />
+                        style={{width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #475569', background: '#1e293b', color: 'white', outline: 'none', fontSize: '0.9rem'}} />
                     <datalist id="lab-players">{allPlayers && allPlayers.map(p => <option key={p.Name} value={p.Name} />)}</datalist>
                 </div>
 
                 {/* Player Info */}
                 {player ? (
-                    <div style={{marginBottom: '20px'}}>
-                        <h3 style={{margin: '0 0 5px 0', color: 'white'}}>{player.Name}</h3>
-                        <div style={{fontSize: '0.8rem', color: '#94a3b8', display: 'flex', gap: '10px'}}>
-                            <span style={{background: isLefty ? '#f59e0b' : '#3b82f6', color: 'white', padding: '2px 6px', borderRadius: '4px'}}>{isLefty ? 'LHP' : 'RHP'}</span>
+                    <div style={{marginBottom: '15px'}}>
+                        <h3 style={{margin: '0 0 4px 0', color: 'white', fontSize: '1rem'}}>{player.Name}</h3>
+                        <div style={{fontSize: '0.75rem', color: '#94a3b8', display: 'flex', gap: '8px'}}>
+                            <span style={{background: isLefty ? '#f59e0b' : '#3b82f6', color: 'white', padding: '1px 5px', borderRadius: '4px'}}>{isLefty ? 'LHP' : 'RHP'}</span>
                             <span>{player.Team}</span>
                         </div>
                     </div>
-                ) : <div style={{color: '#64748b', fontSize: '0.9rem'}}>Select a player to begin analysis.</div>}
+                ) : <div style={{color: '#64748b', fontSize: '0.85rem'}}>Select a player to begin analysis.</div>}
 
-                {/* Arsenal Toggles */}
+                {/* Arsenal Toggles (Compact) */}
                 {player && (
-                    <div style={{display: 'flex', flexDirection: 'column', gap: '8px', flex: 1}}>
-                        <div style={{fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px'}}>Arsenal</div>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '6px', flex: 1}}>
+                        <div style={{fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px'}}>Arsenal</div>
                         {arsenal.map(p => (
                             <div key={p.code} style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
                                 <button onClick={() => toggleType(p.code)} 
-                                    style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #334155', 
+                                    style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid #334155', 
                                     background: activeTypes.includes(p.code) ? getPitchColor(p.code) : '#1e293b', 
-                                    color: 'white', opacity: activeTypes.includes(p.code) ? 1 : 0.6, cursor: 'pointer', textAlign: 'left', fontWeight: '600' }}>
+                                    color: 'white', opacity: activeTypes.includes(p.code) ? 1 : 0.6, cursor: 'pointer', textAlign: 'left', fontWeight: '600', fontSize: '0.85rem' }}>
                                     {PITCH_NAMES[p.code] || p.code}
                                 </button>
                                 <button onClick={() => setEditingPitch(editingPitch === p.code ? null : p.code)}
                                     title="Set Pitch Location"
-                                    style={{padding: '8px', borderRadius: '6px', border: '1px solid #334155', background: editingPitch === p.code ? '#f59e0b' : '#1e293b', cursor: 'pointer'}}>
+                                    style={{padding: '6px', borderRadius: '4px', border: '1px solid #334155', background: editingPitch === p.code ? '#f59e0b' : '#1e293b', cursor: 'pointer'}}>
                                     🎯
                                 </button>
                             </div>
@@ -307,26 +307,26 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                     </div>
                 )}
 
-                {/* SLIDER MOVED HERE */}
-                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #334155' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', color: '#94a3b8', fontSize: '0.8rem' }}>
-                        <span>Playback Speed</span>
+                {/* Speed Slider & Action Button */}
+                <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#94a3b8', fontSize: '0.75rem' }}>
+                        <span>Speed</span>
                         <span>{(playbackSpeed * 100).toFixed(0)}%</span>
                     </div>
+                    {/* FIXED: Slider constrained to 100% width with border-box to prevent overflow */}
                     <input 
                         type="range" min="0.05" max="1.0" step="0.05" value={playbackSpeed} 
                         onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))} 
-                        style={{ width: '100%', accentColor: '#22c55e', cursor: 'pointer' }} 
+                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', accentColor: '#22c55e', cursor: 'pointer', height: '4px', marginBottom: '15px' }} 
                     />
-                </div>
-
-                {/* Main Action Button */}
-                <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
-                    <button onClick={() => setIsPlaying(true)} disabled={!player}
-                        style={{flex: 1, padding: '12px', background: isPlaying ? '#ef4444' : '#22c55e', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', opacity: player ? 1 : 0.5}}>
-                        {isPlaying ? 'Replaying...' : 'Throw'}
-                    </button>
-                    <button onClick={() => setShowDecisionPoint(!showDecisionPoint)} style={{padding: '12px', background: showDecisionPoint ? '#ef4444' : '#475569', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer'}} title="Toggle Tunnel">🛑</button>
+                    
+                    <div style={{display: 'flex', gap: '8px'}}>
+                        <button onClick={() => setIsPlaying(true)} disabled={!player}
+                            style={{flex: 1, padding: '10px', background: isPlaying ? '#ef4444' : '#22c55e', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: player ? 1 : 0.5, fontSize: '0.9rem'}}>
+                            {isPlaying ? 'Replaying...' : 'Throw'}
+                        </button>
+                        <button onClick={() => setShowDecisionPoint(!showDecisionPoint)} style={{padding: '10px', background: showDecisionPoint ? '#ef4444' : '#475569', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'}} title="Toggle Tunnel">🛑</button>
+                    </div>
                 </div>
             </div>
 
@@ -345,13 +345,13 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
 
             {/* --- CENTER ALERT (Editing Mode) --- */}
             {editingPitch && (
-                <div style={{position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 30, background: '#f59e0b', color: 'black', padding: '8px 16px', borderRadius: '20px', fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'}}>
+                <div style={{position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 30, background: '#f59e0b', color: 'black', padding: '8px 16px', borderRadius: '20px', fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', marginLeft: '110px'}}>
                     Click Strike Zone to place {editingPitch}
                 </div>
             )}
 
-            {/* --- 3D CANVAS --- */}
-            <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+            {/* --- 3D CANVAS (Expands to fill remaining width) --- */}
+            <div style={{ flex: 1, position: 'relative', height: '100%', overflow: 'hidden' }}>
                 <Canvas>
                     <PerspectiveCamera makeDefault fov={40} />
                     <CameraRig view={view} />
