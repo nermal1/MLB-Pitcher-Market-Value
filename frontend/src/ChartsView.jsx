@@ -12,9 +12,9 @@ const aggregateTeamData = (players, metric) => {
   const teams = {};
 
   players.forEach(p => {
-    if (!p.Team) return;
+    // FILTER FIX: Exclude invalid teams or placeholders like '---'
+    if (!p.Team || p.Team === '---' || p.Team === '') return;
     
-    // Initialize team object if missing
     if (!teams[p.Team]) {
       teams[p.Team] = { 
         Team: p.Team, 
@@ -28,11 +28,11 @@ const aggregateTeamData = (players, metric) => {
 
     const val = parseFloat(p[metric]) || 0;
     
-    // Robust check for Starter position (fixes the "only relievers" bug)
+    // Robust check for Starter position
     const pos = p.Position ? p.Position.toLowerCase() : '';
     const isStarter = pos.includes('start') || pos === 'sp';
 
-    // Logic for COUNTING stats (Sum them up: WAR, kWAR, Wins, etc.)
+    // Logic for COUNTING stats
     if (['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
       if (isStarter) {
           teams[p.Team].StarterVal += val;
@@ -41,7 +41,7 @@ const aggregateTeamData = (players, metric) => {
       }
       teams[p.Team].TotalVal += val;
     } 
-    // Logic for RATE stats (Weighted Average by IP: ERA, K%, Velo)
+    // Logic for RATE stats (Weighted Average by IP)
     else {
       const ip = parseFloat(p.IP) || 0;
       teams[p.Team].TotalIP += ip;
@@ -50,12 +50,11 @@ const aggregateTeamData = (players, metric) => {
   });
 
   return Object.values(teams).map(t => {
-    // Finalize Rate Stats calculation (Weighted Sum / Total IP)
     if (!['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
       t.TotalVal = t.TotalIP > 0 ? t.WeightedSum / t.TotalIP : 0;
     }
     return t;
-  }).sort((a, b) => b.TotalVal - a.TotalVal); // Sort highest to lowest
+  }).sort((a, b) => b.TotalVal - a.TotalVal);
 };
 
 
@@ -85,6 +84,8 @@ const ScatterView = ({ data }) => {
   const processedData = useMemo(() => {
     return data
       .filter(p => {
+          // Also filter out '---' teams from scatter plot to keep it clean
+          if (!p.Team || p.Team === '---') return false;
           if (archetype !== 'All' && p.Archetype !== archetype) return false;
           if (p[xMetric] === undefined || p[yMetric] === undefined) return false;
           return true;
@@ -240,7 +241,6 @@ const TeamBarView = ({ data }) => {
                 <Bar dataKey="RelieverVal" name="Relievers" stackId="a" fill="#38bdf8" />
               </>
             ) : (
-              // Fixed Colors (No conditional Green/Red/Purple)
               <Bar dataKey="TotalVal" name="Team Average" fill="#a855f7" />
             )}
           </BarChart>
@@ -270,7 +270,6 @@ export const ChartsView = ({ data }) => {
         <button className={`chart-tab ${activeChart === 'team' ? 'active' : ''}`} onClick={() => setActiveChart('team')}>Team Comparison (Roster Analysis)</button>
       </div>
       
-      {/* Container for the specific chart view */}
       <div style={{ flex: 1, minHeight: '600px' }}>
         {activeChart === 'scatter' ? <ScatterView data={data} /> : <TeamBarView data={data} />}
       </div>
@@ -296,21 +295,30 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     const imgCache = useRef({});
     const prevTargetRef = useRef(null);
 
-    // --- 1. CLIENT-SIDE GRAPH CALCULATION ---
+    // --- CLIENT-SIDE GRAPH CALCULATION ---
     const graphData = useMemo(() => {
-        if (!allPlayers.length) return { nodes: [], links: [] };
+        // FILTER FIX: Exclude bad teams from graph too
+        const validPlayers = allPlayers ? allPlayers.filter(p => p.Team && p.Team !== '---') : [];
+        
+        if (!validPlayers.length) return { nodes: [], links: [] };
 
-        // --- CASE A: NO TARGET (LANDSCAPE MODE) ---
-        // Show Top 50 Players by WAR if no specific player is selected
-        if (!targetPlayer) {
-            const topPlayers = [...allPlayers]
-                .sort((a, b) => b.WAR - a.WAR) // Sort by WAR
-                .slice(0, 50) // Top 50
-                .map(p => ({ ...p, id: p.Name, lastName: p.Name.split(' ').pop(), group: p.Archetype || 'Balanced', val: 10 })); // Standard size
+        // 1. Try to find the target node
+        const targetNode = validPlayers.find(p => p.Name === targetPlayer);
 
-            // Create light links between similar players in the top 50
+        // --- CASE A: LANDSCAPE MODE ---
+        if (!targetPlayer || !targetNode) {
+            const topPlayers = [...validPlayers]
+                .sort((a, b) => b.WAR - a.WAR)
+                .slice(0, 50)
+                .map(p => ({ 
+                    ...p, 
+                    id: p.Name, 
+                    lastName: p.Name.split(' ').pop(), 
+                    group: p.Archetype || 'Balanced', 
+                    val: 10 
+                }));
+
             const landscapeLinks = [];
-            // Simple linking logic for landscape (link if archetype matches)
             for (let i = 0; i < topPlayers.length; i++) {
                 for (let j = i + 1; j < topPlayers.length; j++) {
                     if (topPlayers[i].Archetype === topPlayers[j].Archetype) {
@@ -321,22 +329,17 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             return { nodes: topPlayers, links: landscapeLinks };
         }
 
-        // --- CASE B: TARGET MODE (SIMILARITY SEARCH) ---
-        const targetNode = allPlayers.find(p => p.Name === targetPlayer);
-        if (!targetNode) return { nodes: [], links: [] };
-
-        // 1. Calculate Statistics (Mean & StdDev) for selected metrics
+        // --- CASE B: SIMILARITY SEARCH ---
         const stats = {};
         selectedMetrics.forEach(m => {
-            const values = allPlayers.map(p => parseFloat(p[m])).filter(v => !isNaN(v));
+            const values = validPlayers.map(p => parseFloat(p[m])).filter(v => !isNaN(v));
             if (values.length === 0) { stats[m] = { mean: 0, std: 1 }; return; }
             const mean = values.reduce((a, b) => a + b, 0) / values.length;
             const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
             stats[m] = { mean, std: Math.sqrt(variance) || 1 };
         });
 
-        // 2. Calculate Euclidean Distance
-        const neighbors = allPlayers
+        const neighbors = validPlayers
             .filter(p => p.Name !== targetPlayer)
             .map(p => {
                 let distanceSq = 0;
@@ -352,13 +355,26 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 if (!hasData) return null;
                 const distance = Math.sqrt(distanceSq);
                 const similarity = Math.exp(-distance / 2);
-                return { ...p, id: p.Name, lastName: p.Name.split(' ').pop(), similarity, group: p.Archetype || 'Balanced', val: 10 };
+                return { 
+                    ...p, 
+                    id: p.Name, 
+                    lastName: p.Name.split(' ').pop(), 
+                    similarity, 
+                    group: p.Archetype || 'Balanced', 
+                    val: 10 
+                };
             })
             .filter(Boolean)
             .sort((a, b) => b.similarity - a.similarity)
             .slice(0, neighborCount);
 
-        const targetGraphNode = { ...targetNode, id: targetNode.Name, lastName: targetNode.Name.split(' ').pop(), group: targetNode.Archetype, val: 20 };
+        const targetGraphNode = { 
+            ...targetNode, 
+            id: targetNode.Name, 
+            lastName: targetNode.Name.split(' ').pop(), 
+            group: targetNode.Archetype, 
+            val: 20 
+        };
         
         return {
             nodes: [targetGraphNode, ...neighbors],
@@ -367,7 +383,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     }, [targetPlayer, allPlayers, neighborCount, selectedMetrics]);
 
-    // --- 2. CAMERA & CACHE ---
+    // --- CAMERA & CACHE ---
     useEffect(() => {
         graphData.nodes.forEach(node => {
             if (node.MLBID && !imgCache.current[node.MLBID]) {
@@ -377,13 +393,11 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         });
 
-        // Only zoom if we have a target. If landscape mode, let it settle.
-        if (fgRef.current && targetPlayer && targetPlayer !== prevTargetRef.current) {
+        if (fgRef.current && targetPlayer && graphData.nodes.some(n => n.id === targetPlayer)) {
             fgRef.current.d3Force('link').distance(50);
             fgRef.current.d3ReheatSimulation();
             setTimeout(() => fgRef.current.zoomToFit(400, 50), 250);
         }
-        prevTargetRef.current = targetPlayer;
     }, [graphData, targetPlayer]);
 
     useEffect(() => {
@@ -395,10 +409,10 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         return () => clearTimeout(timer);
     }, [inputValue, allPlayers]);
 
-    // --- 3. RENDERING ---
+    // --- RENDERING ---
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
-        const size = isTarget ? 16 : (targetPlayer ? 8 : (globalScale > 1.5 ? 6 : 4)); // Resize logic
+        const size = isTarget ? 16 : (targetPlayer ? 8 : (globalScale > 1.5 ? 6 : 4));
         
         const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
         ctx.fillStyle = colors[node.group] || '#94a3b8';
@@ -406,7 +420,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fill();
 
-        // Draw Image (Only if zoomed in or target)
         const shouldDrawImage = (globalScale > 1.2 || isTarget) && node.MLBID && imgCache.current[node.MLBID];
         if (shouldDrawImage) {
             const img = imgCache.current[node.MLBID];
@@ -421,7 +434,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         }
 
-        // Draw Label
         if (isTarget || globalScale > 1.5) {
             const fontSize = isTarget ? 14 / globalScale : 10 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
@@ -430,6 +442,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 3 / globalScale;
+            
             const labelY = node.y + size + fontSize + 2;
             ctx.strokeText(node.lastName || node.id, node.x, labelY);
             ctx.fillText(node.lastName || node.id, node.x, labelY);
@@ -507,14 +520,15 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     ))}
                 </div>
             </div>
-            {targetPlayer && (
+            {targetPlayer && graphData.nodes.length > 0 && (
                 <>
                     <div className="control-group">
                         <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}>
                             <label>Neighbors</label>
                             <span style={{color:'#a855f7', fontWeight:'bold'}}>{neighborCount}</span>
                         </div>
-                        <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} style={{width: '100%', cursor: 'pointer'}} />
+                        {/* STYLE FIX: Constrained width to prevent overflow */}
+                        <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} style={{width: '90%', cursor: 'pointer', display: 'block'}} />
                     </div>
                      <SimilarityTable 
                         targetNode={graphData.nodes[0]} 
