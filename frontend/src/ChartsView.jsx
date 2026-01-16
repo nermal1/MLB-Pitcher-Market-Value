@@ -278,8 +278,9 @@ export const ChartsView = ({ data }) => {
 };
 
 
+
 // ==========================================
-// 5. EXPORT: SIMILARITY NETWORK (ROBUST PHYSICS & DATA)
+// 5. EXPORT: SIMILARITY NETWORK (CRASH FIX)
 // ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
@@ -287,7 +288,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     // State
     const [inputValue, setInputValue] = useState('');
     const [targetPlayer, setTargetPlayer] = useState('');
-    const [neighborCount, setNeighborCount] = useState(10); // Increased default to 10
+    const [neighborCount, setNeighborCount] = useState(10); 
     const [selectedMetrics, setSelectedMetrics] = useState(['K%', 'BB%', 'vFA (sc)', 'Stuff+']);
     
     const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
@@ -303,7 +304,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
         // --- CASE A: LANDSCAPE MODE (No Target) ---
         if (!targetPlayer || !targetNode) {
-            // Take top 50 WAR players for the landscape
             const topPlayers = [...validPlayers]
                 .sort((a, b) => b.WAR - a.WAR)
                 .slice(0, 50)
@@ -315,7 +315,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     val: 10 
                 }));
 
-            // Create links between archetypes to create clusters
             const landscapeLinks = [];
             for (let i = 0; i < topPlayers.length; i++) {
                 for (let j = i + 1; j < topPlayers.length; j++) {
@@ -324,7 +323,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                             source: topPlayers[i].id, 
                             target: topPlayers[j].id,
                             type: 'archetype',
-                            similarity: 0.2 // Low similarity, loose connection
+                            similarity: 0.2 
                         });
                     }
                 }
@@ -333,15 +332,11 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         }
 
         // --- CASE B: SIMILARITY SEARCH (Target Selected) ---
-        
-        // 1. Filter Metrics: Only use metrics the Target Player actually HAS data for.
-        // If target has no 'Stuff+', we shouldn't use it to compare.
         const activeMetrics = selectedMetrics.filter(m => {
              const val = parseFloat(targetNode[m]);
              return !isNaN(val);
         });
 
-        // 2. Calculate League Stats (Mean/StdDev) for Z-Scores
         const stats = {};
         activeMetrics.forEach(m => {
             const values = validPlayers.map(p => parseFloat(p[m])).filter(v => !isNaN(v));
@@ -351,7 +346,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             stats[m] = { mean, std: Math.sqrt(variance) || 1 };
         });
 
-        // 3. Calculate Distance
         const neighbors = validPlayers
             .filter(p => p.Name !== targetPlayer)
             .map(p => {
@@ -361,9 +355,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 activeMetrics.forEach(m => {
                     const valA = parseFloat(targetNode[m]);
                     let valB = parseFloat(p[m]);
-                    
-                    // DATA FIX: If neighbor is missing data, assume they are "Average" (Mean)
-                    // instead of excluding them entirely.
                     if (isNaN(valB)) valB = stats[m].mean; 
 
                     const zA = (valA - stats[m].mean) / stats[m].std;
@@ -375,7 +366,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
                 if (validMetricCount === 0) return null;
                 
-                // Normalize distance by number of metrics used
                 const distance = Math.sqrt(distanceSq);
                 const similarity = Math.exp(-distance / 2); 
 
@@ -411,9 +401,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     }, [targetPlayer, allPlayers, neighborCount, selectedMetrics]);
 
-    // --- CAMERA & PHYSICS ENGINE (UPDATED) ---
+    // --- CAMERA & PHYSICS ENGINE (FIXED) ---
     useEffect(() => {
-        // Preload Images
         graphData.nodes.forEach(node => {
             if (node.MLBID && !imgCache.current[node.MLBID]) {
                 const img = new Image();
@@ -423,21 +412,12 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         });
 
         if (fgRef.current) {
-            // PHYSICS TWEAKS FOR SCATTERING:
-            fgRef.current.d3Force('charge').strength(-400); // Strong repulsion
-            fgRef.current.d3Force('center', null); // Don't force strict center
-            
-            // Allow physics to move faster and settle slower
-            fgRef.current.d3AlphaDecay(0.02); 
-            fgRef.current.d3VelocityDecay(0.4);
+            // Apply Forces
+            fgRef.current.d3Force('charge').strength(-400); 
+            fgRef.current.d3Force('center', null); 
 
             fgRef.current.d3Force('link').distance(link => {
-                // Initial Landscape Mode (Cluster by archetype)
                 if (link.type === 'archetype') return 150; 
-                
-                // Similarity Mode:
-                // 100% Sim = 30px distance
-                // 50% Sim = 200px distance
                 if (link.similarity) {
                     return 350 * (1 - link.similarity) + 30; 
                 }
@@ -497,7 +477,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         }
     }, [targetPlayer]);
 
-    // --- NODE POINTER AREA (HITBOX) ---
     const nodePointerAreaPaint = useCallback((node, color, ctx) => {
         const size = node.id === targetPlayer ? 16 : 8;
         ctx.fillStyle = color;
@@ -511,7 +490,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     // Helper: Table
     const SimilarityTable = ({ targetNode, neighbors, metrics }) => {
         if (!targetNode) return null;
-        // Only show metrics that were actually used (valid for target)
         const displayMetrics = metrics.filter(m => !isNaN(parseFloat(targetNode[m])));
 
         const formatVal = (val, metric) => {
@@ -576,12 +554,15 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ref={fgRef}
             graphData={graphData}
             nodeCanvasObject={paintNode}
-            nodePointerAreaPaint={nodePointerAreaPaint} // <--- HITBOX FUNCTION IS BACK
+            nodePointerAreaPaint={nodePointerAreaPaint}
             
-            // PHYSICS SETTINGS
-            warmupTicks={100}         // Longer warmup to break circle
-            cooldownTicks={Infinity}  // Keep running
-            alphaDecay={0.01}         // Slower decay = more time to move
+            // --- FIX IS HERE (Passed as Props now) ---
+            d3AlphaDecay={0.02}
+            d3VelocityDecay={0.4}
+            // ----------------------------------------
+
+            warmupTicks={100}         
+            cooldownTicks={Infinity}  
             
             nodeLabel="id"
             linkColor={() => 'rgba(71, 85, 105, 0.4)'}
