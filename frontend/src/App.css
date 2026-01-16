@@ -580,9 +580,10 @@ strong, .card, button {
 }
 /* --- Chart Components --- */
 .chart-container {
-  background: var(--bg-card);
+  background: var(--card-bg);
   border-radius: 16px;
   padding: 20px;
+  height: 500px;
   border: 1px solid var(--border-color);
   margin-top: 10px;
 }
@@ -642,7 +643,7 @@ strong, .card, button {
   overflow-x: auto;
   border-radius: 12px;
   border: 1px solid var(--border-color);
-  background: var(--bg-card);
+  background: var(--card-bg);
 }
 
 .table-container {
@@ -658,7 +659,7 @@ strong, .card, button {
 .sticky-col {
   position: sticky;
   left: 0;
-  background: var(--bg-card); /* Matches row background */
+  background: var(--card-bg); /* Matches row background */
   z-index: 10;
   border-right: 2px solid var(--border-color);
   box-shadow: 4px 0 10px rgba(0,0,0,0.3);
@@ -968,6 +969,47 @@ strong, .card, button {
   padding: 6px 4px;
   color: #cbd5e1; /* Could be var(--text-primary) or slightly muted */
   border-bottom: 1px solid var(--card-bg);
+}
+
+/* ADD THIS NEW SECTION FOR THE GRID/TABLE TOGGLES */
+.view-toggle-group {
+  display: flex;
+  gap: 0; /* Connect the buttons */
+  margin-right: 15px;
+}
+
+.toggle-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--card-bg); /* Fixes the grey box */
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-option:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  border-right: none; /* Merge borders */
+}
+
+.toggle-option:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.toggle-option:hover {
+  background: var(--border-color);
+  color: white;
+}
+
+.toggle-option.active {
+  background: var(--accent); /* This adds the blue active color */
+  color: white;
+  border-color: var(--accent);
 }
 
 /* Specific Columns */
@@ -1548,4 +1590,47 @@ input[type=range] {
 
 @media (max-width: 500px) {
   .glossary-sidebar { width: 100%; }
+}
+
+
+/* --- FIX FOR CHART CONTROLS (Add this block) --- */
+
+/* Style the buttons inside the chart controls */
+.chart-controls button {
+  padding: 8px 16px;
+  background: var(--card-bg); /* Dark background instead of grey */
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-right: 8px; /* Space between buttons */
+  transition: all 0.2s;
+}
+
+.chart-controls button:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+/* If the buttons have an 'active' class, make them blue */
+.chart-controls button.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* Fix the Dropdowns (Selects) in the chart area */
+.chart-controls select {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.chart-controls select:focus {
+  border-color: var(--accent);
 }
