@@ -400,16 +400,12 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         });
 
         if (fgRef.current) {
-            // Stronger repulsion to prevent overlap
             fgRef.current.d3Force('charge').strength(-300);
-
-            // Dynamic link distance based on Similarity
             fgRef.current.d3Force('link').distance(link => {
                 if (link.type === 'archetype') return 100; 
                 if (link.similarity) return 200 * (1 - link.similarity) + 20; 
                 return 50; 
             });
-
             fgRef.current.d3ReheatSimulation();
             
             if (targetPlayer) {
@@ -461,6 +457,15 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ctx.strokeText(node.lastName || node.id, node.x, node.y + size + fontSize + 2);
             ctx.fillText(node.lastName || node.id, node.x, node.y + size + fontSize + 2);
         }
+    }, [targetPlayer]);
+
+    // --- THIS WAS MISSING ---
+    const nodePointerAreaPaint = useCallback((node, color, ctx) => {
+        const size = node.id === targetPlayer ? 16 : 8;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
+        ctx.fill();
     }, [targetPlayer]);
 
     const toggleMetric = (m) => setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
