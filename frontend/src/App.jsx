@@ -650,8 +650,7 @@ function App() {
         )}
       </header>
 
-      <main className="main-content" style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {loading && activeTab !== 'info' ? (
+      <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>        {loading && activeTab !== 'info' ? (
           <div className="loading-state">Loading Data...</div>
         ) : (
           <>
@@ -686,7 +685,7 @@ function App() {
 
           {activeTab === 'lab' && (
           // ADDED: Full border and border-radius here to frame the entire tool
-            <div style={{ display: 'flex', height: '100%', width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', minHeight: '600px', width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', overflow: 'hidden' }}>
     
             {/* Pitch Lab (Left + Center) */}
               <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
