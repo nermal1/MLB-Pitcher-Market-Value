@@ -279,7 +279,7 @@ export const ChartsView = ({ data }) => {
 
 
 // ==========================================
-// 5. EXPORT: SIMILARITY NETWORK (Client-Side Logic)
+// 5. EXPORT: SIMILARITY NETWORK (UPDATED PHYSICS)
 // ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
@@ -293,23 +293,19 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
     
     const imgCache = useRef({});
-    const prevTargetRef = useRef(null);
 
     // --- CLIENT-SIDE GRAPH CALCULATION ---
     const graphData = useMemo(() => {
-        // FILTER FIX: Exclude bad teams from graph too
         const validPlayers = allPlayers ? allPlayers.filter(p => p.Team && p.Team !== '---') : [];
-        
         if (!validPlayers.length) return { nodes: [], links: [] };
 
-        // 1. Try to find the target node
         const targetNode = validPlayers.find(p => p.Name === targetPlayer);
 
-        // --- CASE A: LANDSCAPE MODE ---
+        // --- CASE A: LANDSCAPE MODE (No Target) ---
         if (!targetPlayer || !targetNode) {
             const topPlayers = [...validPlayers]
                 .sort((a, b) => b.WAR - a.WAR)
-                .slice(0, 50)
+                .slice(0, 40)
                 .map(p => ({ 
                     ...p, 
                     id: p.Name, 
@@ -322,14 +318,18 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             for (let i = 0; i < topPlayers.length; i++) {
                 for (let j = i + 1; j < topPlayers.length; j++) {
                     if (topPlayers[i].Archetype === topPlayers[j].Archetype) {
-                        landscapeLinks.push({ source: topPlayers[i].id, target: topPlayers[j].id });
+                        landscapeLinks.push({ 
+                            source: topPlayers[i].id, 
+                            target: topPlayers[j].id,
+                            type: 'archetype' 
+                        });
                     }
                 }
             }
             return { nodes: topPlayers, links: landscapeLinks };
         }
 
-        // --- CASE B: SIMILARITY SEARCH ---
+        // --- CASE B: SIMILARITY SEARCH (Target Selected) ---
         const stats = {};
         selectedMetrics.forEach(m => {
             const values = validPlayers.map(p => parseFloat(p[m])).filter(v => !isNaN(v));
@@ -353,8 +353,10 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                     distanceSq += Math.pow(zA - zB, 2);
                 });
                 if (!hasData) return null;
+                
                 const distance = Math.sqrt(distanceSq);
-                const similarity = Math.exp(-distance / 2);
+                const similarity = Math.exp(-distance / 2); 
+
                 return { 
                     ...p, 
                     id: p.Name, 
@@ -378,12 +380,16 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         
         return {
             nodes: [targetGraphNode, ...neighbors],
-            links: neighbors.map(n => ({ source: targetGraphNode.id, target: n.id, similarity: n.similarity }))
+            links: neighbors.map(n => ({ 
+                source: targetGraphNode.id, 
+                target: n.id, 
+                similarity: n.similarity 
+            }))
         };
 
     }, [targetPlayer, allPlayers, neighborCount, selectedMetrics]);
 
-    // --- CAMERA & CACHE ---
+    // --- CAMERA & PHYSICS ENGINE ---
     useEffect(() => {
         graphData.nodes.forEach(node => {
             if (node.MLBID && !imgCache.current[node.MLBID]) {
@@ -393,10 +399,22 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         });
 
-        if (fgRef.current && targetPlayer && graphData.nodes.some(n => n.id === targetPlayer)) {
-            fgRef.current.d3Force('link').distance(50);
+        if (fgRef.current) {
+            // Stronger repulsion to prevent overlap
+            fgRef.current.d3Force('charge').strength(-300);
+
+            // Dynamic link distance based on Similarity
+            fgRef.current.d3Force('link').distance(link => {
+                if (link.type === 'archetype') return 100; 
+                if (link.similarity) return 200 * (1 - link.similarity) + 20; 
+                return 50; 
+            });
+
             fgRef.current.d3ReheatSimulation();
-            setTimeout(() => fgRef.current.zoomToFit(400, 50), 250);
+            
+            if (targetPlayer) {
+                 setTimeout(() => fgRef.current.zoomToFit(600, 50), 300);
+            }
         }
     }, [graphData, targetPlayer]);
 
@@ -409,12 +427,12 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         return () => clearTimeout(timer);
     }, [inputValue, allPlayers]);
 
-    // --- RENDERING ---
+    // --- CANVAS PAINTING ---
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
         const size = isTarget ? 16 : (targetPlayer ? 8 : (globalScale > 1.5 ? 6 : 4));
-        
         const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
+        
         ctx.fillStyle = colors[node.group] || '#94a3b8';
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
@@ -428,12 +446,10 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, size - 1, 0, 2 * Math.PI, false);
                 ctx.clip();
-                const imgSize = size * 2; 
-                ctx.drawImage(img, node.x - size, node.y - size, imgSize, imgSize);
+                ctx.drawImage(img, node.x - size, node.y - size, size * 2, size * 2);
                 ctx.restore();
             }
         }
-
         if (isTarget || globalScale > 1.5) {
             const fontSize = isTarget ? 14 / globalScale : 10 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
@@ -442,24 +458,14 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 3 / globalScale;
-            
-            const labelY = node.y + size + fontSize + 2;
-            ctx.strokeText(node.lastName || node.id, node.x, labelY);
-            ctx.fillText(node.lastName || node.id, node.x, labelY);
+            ctx.strokeText(node.lastName || node.id, node.x, node.y + size + fontSize + 2);
+            ctx.fillText(node.lastName || node.id, node.x, node.y + size + fontSize + 2);
         }
-    }, [targetPlayer]);
-
-    const nodePointerAreaPaint = useCallback((node, color, ctx) => {
-        const size = node.id === targetPlayer ? 16 : 8;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
-        ctx.fill();
     }, [targetPlayer]);
 
     const toggleMetric = (m) => setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
 
-    // Sub-Component: Similarity Table
+    // Helper: Table
     const SimilarityTable = ({ targetNode, neighbors, metrics }) => {
         if (!targetNode) return null;
         const formatVal = (val, metric) => {
@@ -468,28 +474,18 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             if (metric.includes('%')) return (num * 100).toFixed(1) + '%';
             if (metric.includes('v') && metric.includes('(sc)')) return num.toFixed(1);
             if (['ERA', 'SIERA', 'FIP'].includes(metric)) return num.toFixed(2);
-            return num.toFixed(0);
+            return num.toFixed(1);
         };
-    
         return (
             <div className="sim-table-container fade-in">
                 <h4>Similarity Breakdown</h4>
                 <div className="sim-table-wrapper">
                     <table className="sim-table">
-                        <thead>
-                            <tr><th>Player</th><th>Sim %</th>{metrics.map(m => <th key={m} className="stat-header">{m}</th>)}</tr>
-                        </thead>
+                        <thead><tr><th>Player</th><th>Sim %</th>{metrics.map(m => <th key={m}>{m}</th>)}</tr></thead>
                         <tbody>
-                            <tr className="target-row">
-                                <td className="name-cell"><span className="marker-dot" style={{background: '#a855f7'}}></span>{targetNode.lastName}</td>
-                                <td>-</td>{metrics.map(m => <td key={m} className="stat-cell target-stat">{formatVal(targetNode[m], m)}</td>)}
-                            </tr>
+                            <tr className="target-row"><td className="name-cell"><span className="marker-dot" style={{background: '#a855f7'}}></span>{targetNode.lastName}</td><td>-</td>{metrics.map(m => <td key={m} className="target-stat">{formatVal(targetNode[m], m)}</td>)}</tr>
                             {neighbors.map(node => (
-                                <tr key={node.id}>
-                                    <td className="name-cell">{node.lastName}</td>
-                                    <td className="sim-cell">{(node.similarity * 100).toFixed(0)}%</td>
-                                    {metrics.map(m => <td key={m} className="stat-cell">{formatVal(node[m], m)}</td>)}
-                                </tr>
+                                <tr key={node.id}><td className="name-cell">{node.lastName}</td><td className="sim-cell">{(node.similarity * 100).toFixed(0)}%</td>{metrics.map(m => <td key={m}>{formatVal(node[m], m)}</td>)}</tr>
                             ))}
                         </tbody>
                     </table>
@@ -505,56 +501,44 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             <div className="control-group">
                 <label>Target Player</label>
                 <div style={{position: 'relative'}}>
-                    <input 
-                        list="players" placeholder="Type name..." value={inputValue} 
-                        onChange={(e) => setInputValue(e.target.value)} className="dark-input"
-                    />
+                    <input list="players" placeholder="Type name..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="dark-input" />
                 </div>
                 <datalist id="players">{allPlayers.map(p => <option key={p.Name} value={p.Name} />)}</datalist>
             </div>
             <div className="control-group">
                 <label>Metric Mix:</label>
                 <div className="metric-tags">
-                    {availableMetrics.map(m => (
-                        <button key={m} className={`metric-tag ${selectedMetrics.includes(m) ? 'active' : ''}`} onClick={() => toggleMetric(m)}>{m}</button>
-                    ))}
+                    {availableMetrics.map(m => (<button key={m} className={`metric-tag ${selectedMetrics.includes(m) ? 'active' : ''}`} onClick={() => toggleMetric(m)}>{m}</button>))}
                 </div>
             </div>
             {targetPlayer && graphData.nodes.length > 0 && (
                 <>
                     <div className="control-group">
-                        <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}>
-                            <label>Neighbors</label>
-                            <span style={{color:'#a855f7', fontWeight:'bold'}}>{neighborCount}</span>
-                        </div>
-                        {/* STYLE FIX: Constrained width to prevent overflow */}
-                        <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} style={{width: '90%', cursor: 'pointer', display: 'block'}} />
+                        <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}><label>Neighbors</label><span style={{color:'#a855f7'}}>{neighborCount}</span></div>
+                        <input type="range" min="1" max="20" value={neighborCount} onChange={(e) => setNeighborCount(parseInt(e.target.value))} style={{width: '100%'}} />
                     </div>
-                     <SimilarityTable 
-                        targetNode={graphData.nodes[0]} 
-                        neighbors={graphData.nodes.slice(1)} 
-                        metrics={selectedMetrics} 
-                    />
+                     <SimilarityTable targetNode={graphData.nodes[0]} neighbors={graphData.nodes.slice(1)} metrics={selectedMetrics} />
                 </>
             )}
             <button className="reset-btn" onClick={() => {setInputValue(''); setTargetPlayer('');}}>Reset View</button>
         </div>
+        
+        {/* GRAPH RENDERER */}
         <div className="graph-wrapper" style={{ flex: 1, height: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #334155', position: 'relative', overflow: 'hidden' }}>
-          {graphData.nodes.length === 0 && (
-              <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#64748b'}}>Select a player to generate network</div>
-          )}
+          {graphData.nodes.length === 0 && <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#64748b'}}>Select a player to generate network</div>}
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData}
             nodeCanvasObject={paintNode}
             nodePointerAreaPaint={nodePointerAreaPaint}
-            warmupTicks={100} cooldownTicks={0}
+            warmupTicks={50}     
+            cooldownTicks={Infinity} 
             nodeLabel="id"
             linkColor={() => 'rgba(71, 85, 105, 0.4)'}
             linkWidth={link => (link.similarity ? link.similarity * 3 : 1)}
             backgroundColor="#0f172a"
             onNodeClick={node => { setInputValue(node.id); setTargetPlayer(node.id); }}
-            enableNodeDrag={false} enableZoomInteraction={true}
+            enableNodeDrag={true} 
           />
         </div>
       </div>

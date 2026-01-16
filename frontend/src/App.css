@@ -602,6 +602,13 @@ strong, .card, button {
   color: var(--text-secondary);
 }
 
+.charts-nav {
+  display: flex;
+  justify-content: center; /* Centers the tabs nicely */
+  margin-bottom: 20px;
+  gap: 0; /* Connects the buttons */
+}
+
 .custom-tooltip {
   background: var(--bg-color); /* Darker background for contrast */
   border: 1px solid var(--border-color);
@@ -1060,6 +1067,42 @@ strong, .card, button {
   color: var(--text-primary);
 }
 
+.chart-tab {
+  padding: 10px 24px;
+  background: var(--card-bg); /* Dark background */
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+.chart-tab:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  border-right: none; /* Merges the border with the next button */
+}
+
+/* Round the right side of the last button */
+.chart-tab:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+/* Hover Effect */
+.chart-tab:hover {
+  background: var(--border-color);
+  color: white;
+}
+
+/* Active State (Blue) */
+.chart-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); /* Subtle glow */
+  position: relative; /* Brings it on top of the border overlap */
+}
 .chart-controls {
   display: flex;
   gap: 15px;
