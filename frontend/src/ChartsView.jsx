@@ -12,7 +12,6 @@ const aggregateTeamData = (players, metric) => {
   const teams = {};
 
   players.forEach(p => {
-    // FILTER FIX: Exclude invalid teams or placeholders like '---'
     if (!p.Team || p.Team === '---' || p.Team === '') return;
     
     if (!teams[p.Team]) {
@@ -27,12 +26,9 @@ const aggregateTeamData = (players, metric) => {
     }
 
     const val = parseFloat(p[metric]) || 0;
-    
-    // Robust check for Starter position
     const pos = p.Position ? p.Position.toLowerCase() : '';
     const isStarter = pos.includes('start') || pos === 'sp';
 
-    // Logic for COUNTING stats
     if (['WAR', 'kWAR', 'W', 'L', 'SV', 'HLD', 'IP'].includes(metric)) {
       if (isStarter) {
           teams[p.Team].StarterVal += val;
@@ -40,9 +36,7 @@ const aggregateTeamData = (players, metric) => {
           teams[p.Team].RelieverVal += val;
       }
       teams[p.Team].TotalVal += val;
-    } 
-    // Logic for RATE stats (Weighted Average by IP)
-    else {
+    } else {
       const ip = parseFloat(p.IP) || 0;
       teams[p.Team].TotalIP += ip;
       teams[p.Team].WeightedSum += (val * ip);
@@ -84,7 +78,6 @@ const ScatterView = ({ data }) => {
   const processedData = useMemo(() => {
     return data
       .filter(p => {
-          // Also filter out '---' teams from scatter plot to keep it clean
           if (!p.Team || p.Team === '---') return false;
           if (archetype !== 'All' && p.Archetype !== archetype) return false;
           if (p[xMetric] === undefined || p[yMetric] === undefined) return false;
@@ -278,9 +271,8 @@ export const ChartsView = ({ data }) => {
 };
 
 
-
 // ==========================================
-// 5. EXPORT: SIMILARITY NETWORK (CRASH FIX)
+// 5. EXPORT: SIMILARITY NETWORK (CRASH & PHYSICS FIXED)
 // ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
@@ -332,11 +324,14 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         }
 
         // --- CASE B: SIMILARITY SEARCH (Target Selected) ---
+        
+        // 1. Determine which metrics are valid for the TARGET player
         const activeMetrics = selectedMetrics.filter(m => {
              const val = parseFloat(targetNode[m]);
              return !isNaN(val);
         });
 
+        // 2. Calculate Stats (Mean/StdDev) based on League Data
         const stats = {};
         activeMetrics.forEach(m => {
             const values = validPlayers.map(p => parseFloat(p[m])).filter(v => !isNaN(v));
@@ -346,6 +341,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             stats[m] = { mean, std: Math.sqrt(variance) || 1 };
         });
 
+        // 3. Find Neighbors
         const neighbors = validPlayers
             .filter(p => p.Name !== targetPlayer)
             .map(p => {
@@ -355,6 +351,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 activeMetrics.forEach(m => {
                     const valA = parseFloat(targetNode[m]);
                     let valB = parseFloat(p[m]);
+                    
+                    // FALLBACK: If neighbor lacks data, assume Average (Mean)
                     if (isNaN(valB)) valB = stats[m].mean; 
 
                     const zA = (valA - stats[m].mean) / stats[m].std;
@@ -401,8 +399,9 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     }, [targetPlayer, allPlayers, neighborCount, selectedMetrics]);
 
-    // --- CAMERA & PHYSICS ENGINE (FIXED) ---
+    // --- CAMERA & PHYSICS ENGINE ---
     useEffect(() => {
+        // 1. Preload Images
         graphData.nodes.forEach(node => {
             if (node.MLBID && !imgCache.current[node.MLBID]) {
                 const img = new Image();
@@ -411,14 +410,19 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             }
         });
 
+        // 2. Configure Dynamic Forces (Ref-based)
         if (fgRef.current) {
-            // Apply Forces
+            // Strong Charge to prevent overlap
             fgRef.current.d3Force('charge').strength(-400); 
+            
+            // Remove center force to allow spread
             fgRef.current.d3Force('center', null); 
 
+            // Dynamic Links
             fgRef.current.d3Force('link').distance(link => {
                 if (link.type === 'archetype') return 150; 
                 if (link.similarity) {
+                    // Inverse Relationship: High Sim = Low Distance
                     return 350 * (1 - link.similarity) + 30; 
                 }
                 return 100; 
@@ -477,6 +481,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         }
     }, [targetPlayer]);
 
+    // --- HITBOX PAINTING (CRASH FIX) ---
     const nodePointerAreaPaint = useCallback((node, color, ctx) => {
         const size = node.id === targetPlayer ? 16 : 8;
         ctx.fillStyle = color;
@@ -490,6 +495,7 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     // Helper: Table
     const SimilarityTable = ({ targetNode, neighbors, metrics }) => {
         if (!targetNode) return null;
+        // Filter metrics for table display based on Target Node data availability
         const displayMetrics = metrics.filter(m => !isNaN(parseFloat(targetNode[m])));
 
         const formatVal = (val, metric) => {
@@ -556,14 +562,13 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             nodeCanvasObject={paintNode}
             nodePointerAreaPaint={nodePointerAreaPaint}
             
-            // --- FIX IS HERE (Passed as Props now) ---
-            d3AlphaDecay={0.02}
-            d3VelocityDecay={0.4}
-            // ----------------------------------------
+            // --- PHYSICS PROPS (CRASH FIX) ---
+            d3AlphaDecay={0.01}         // Slower decay = Nodes move longer
+            d3VelocityDecay={0.4}       // Less friction = Nodes slide further
+            warmupTicks={200}           // Pre-calculate 200 frames to break the circle layout
+            cooldownTicks={Infinity}    // Keep the simulation alive for dragging
+            // ---------------------------------
 
-            warmupTicks={100}         
-            cooldownTicks={Infinity}  
-            
             nodeLabel="id"
             linkColor={() => 'rgba(71, 85, 105, 0.4)'}
             linkWidth={link => (link.similarity ? link.similarity * 3 : 1)}
