@@ -272,7 +272,7 @@ export const ChartsView = ({ data }) => {
 
 
 // ==========================================
-// 5. EXPORT: SIMILARITY NETWORK (FINAL UI & PHYSICS FIX)
+// 5. EXPORT: SIMILARITY NETWORK (THE "GALAXY WEB" FIX)
 // ==========================================
 export const SimilarityNetwork = ({ allPlayers }) => { 
     const fgRef = useRef();
@@ -280,15 +280,15 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     // State
     const [inputValue, setInputValue] = useState('');
     const [targetPlayer, setTargetPlayer] = useState('');
-    const [neighborCount, setNeighborCount] = useState(10); 
+    const [neighborCount, setNeighborCount] = useState(6); // Links per player
     const [selectedMetrics, setSelectedMetrics] = useState(['K%', 'BB%', 'vFA (sc)', 'Stuff+']);
     
-    // UI Labels for buttons
+    // UI Labels
     const availableMetrics = ['K%', 'BB%', 'vFA (sc)', 'Stuff+', 'SIERA', 'FIP', 'GB%', 'Whiff%', 'ERA'];
     
     // MAP: UI Label -> Actual Data Key
     const metricMap = {
-        'Whiff%': 'SwStr%', // <--- THIS FIXES THE BROKEN BUTTON
+        'Whiff%': 'SwStr%', 
         'K%': 'K%',
         'BB%': 'BB%',
         'vFA (sc)': 'vFA (sc)',
@@ -303,124 +303,151 @@ export const SimilarityNetwork = ({ allPlayers }) => {
 
     // --- CLIENT-SIDE GRAPH CALCULATION ---
     const graphData = useMemo(() => {
+        // 1. Data Prep
         const validPlayers = allPlayers ? allPlayers.filter(p => p.Team && p.Team !== '---') : [];
         if (!validPlayers.length) return { nodes: [], links: [] };
 
         const targetNode = validPlayers.find(p => p.Name === targetPlayer);
 
-        // --- CASE A: LANDSCAPE MODE (No Target) ---
-        if (!targetPlayer || !targetNode) {
-            const topPlayers = [...validPlayers]
-                .sort((a, b) => b.WAR - a.WAR)
-                .slice(0, 60) // Increased to 60 for better density
-                .map(p => ({ 
-                    ...p, 
-                    id: p.Name, 
-                    lastName: p.Name.split(' ').pop(), 
-                    group: p.Archetype || 'Balanced', 
-                    val: 10 
-                }));
-
-            const landscapeLinks = [];
-            for (let i = 0; i < topPlayers.length; i++) {
-                for (let j = i + 1; j < topPlayers.length; j++) {
-                    // Link same archetypes to form clusters
-                    if (topPlayers[i].Archetype === topPlayers[j].Archetype) {
-                        landscapeLinks.push({ 
-                            source: topPlayers[i].id, 
-                            target: topPlayers[j].id,
-                            type: 'archetype',
-                            similarity: 0.1 
-                        });
-                    }
-                }
-            }
-            return { nodes: topPlayers, links: landscapeLinks };
+        // 2. Determine Scope: Target Mode vs. Galaxy Mode
+        // If a target is selected, we focus on them. If not, we map the Top 500.
+        let activeNodes = [];
+        if (targetPlayer && targetNode) {
+             // In Target Mode, we just take the target + top 100 closest (calculated later)
+             activeNodes = validPlayers; 
+        } else {
+             // GALAXY MODE: Take Top 500 Players by WAR (Performance Limit)
+             activeNodes = [...validPlayers].sort((a, b) => b.WAR - a.WAR).slice(0, 500);
         }
 
-        // --- CASE B: SIMILARITY SEARCH (Target Selected) ---
-        
-        // 1. Filter Metrics: Only use metrics valid for TARGET player
-        const activeMetrics = selectedMetrics.filter(m => {
-             const key = metricMap[m] || m;
-             const val = parseFloat(targetNode[key]);
-             return !isNaN(val);
-        });
-
-        // 2. Calculate Stats (Mean/StdDev)
+        // 3. Normalize Stats (Z-Scores)
+        // We need to know the Mean and StdDev of the SELECTED metrics to calculate distance fairly.
         const stats = {};
-        activeMetrics.forEach(m => {
-            const key = metricMap[m] || m;
+        const activeMetricKeys = selectedMetrics.map(m => metricMap[m] || m);
+
+        activeMetricKeys.forEach(key => {
             const values = validPlayers.map(p => parseFloat(p[key])).filter(v => !isNaN(v));
-            
             if (values.length === 0) { stats[key] = { mean: 0, std: 1 }; return; }
-            
             const mean = values.reduce((a, b) => a + b, 0) / values.length;
             const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
             stats[key] = { mean, std: Math.sqrt(variance) || 1 };
         });
 
-        // 3. Find Neighbors
-        const neighbors = validPlayers
-            .filter(p => p.Name !== targetPlayer)
-            .map(p => {
-                let distanceSq = 0;
-                let validMetricCount = 0;
-
-                activeMetrics.forEach(m => {
-                    const key = metricMap[m] || m;
-                    const valA = parseFloat(targetNode[key]);
-                    let valB = parseFloat(p[key]);
+        // 4. GENERATE LINKS (The KNN Algorithm)
+        const links = [];
+        
+        // If we are in "Galaxy Mode" (No target), we link EVERYONE to their nearest neighbors.
+        if (!targetPlayer) {
+            activeNodes.forEach((p1, i) => {
+                // Calculate distance from p1 to everyone else
+                const distances = [];
+                
+                activeNodes.forEach((p2, j) => {
+                    if (i === j) return; // Don't link to self
                     
-                    if (isNaN(valB)) valB = stats[key].mean; 
+                    let distSq = 0;
+                    let validCount = 0;
 
-                    const zA = (valA - stats[key].mean) / stats[key].std;
-                    const zB = (valB - stats[key].mean) / stats[key].std;
-                    
-                    distanceSq += Math.pow(zA - zB, 2);
-                    validMetricCount++;
+                    activeMetricKeys.forEach(key => {
+                        const valA = parseFloat(p1[key]);
+                        const valB = parseFloat(p2[key]);
+                        if (isNaN(valA) || isNaN(valB)) return;
+
+                        // Z-Score Standardization
+                        const zA = (valA - stats[key].mean) / stats[key].std;
+                        const zB = (valB - stats[key].mean) / stats[key].std;
+                        distSq += Math.pow(zA - zB, 2);
+                        validCount++;
+                    });
+
+                    if (validCount > 0) {
+                        distances.push({ 
+                            id: p2.Name, 
+                            dist: Math.sqrt(distSq) 
+                        });
+                    }
                 });
 
-                if (validMetricCount === 0) return null;
-                
-                const distance = Math.sqrt(distanceSq);
-                const similarity = Math.exp(-distance / 2); 
+                // Find the k-nearest neighbors
+                distances.sort((a, b) => a.dist - b.dist);
+                const neighbors = distances.slice(0, 4); // Link to 4 closest
 
-                return { 
-                    ...p, 
-                    id: p.Name, 
-                    lastName: p.Name.split(' ').pop(), 
-                    similarity, 
-                    group: p.Archetype || 'Balanced', 
-                    val: 10 
-                };
-            })
-            .filter(Boolean)
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, neighborCount);
+                neighbors.forEach(n => {
+                    // Similarity Score (0 to 1)
+                    const sim = Math.max(0.01, Math.exp(-n.dist / 2));
+                    links.push({ 
+                        source: p1.Name, 
+                        target: n.id, 
+                        similarity: sim 
+                    });
+                });
+            });
 
-        const targetGraphNode = { 
-            ...targetNode, 
-            id: targetNode.Name, 
-            lastName: targetNode.Name.split(' ').pop(), 
-            group: targetNode.Archetype, 
-            val: 20 
-        };
+            // Map nodes for the graph
+            const nodes = activeNodes.map(p => ({
+                ...p,
+                id: p.Name,
+                lastName: p.Name.split(' ').pop(),
+                group: p.Archetype || 'Balanced',
+                val: p.WAR > 3 ? 15 : (p.WAR > 1 ? 8 : 4) // Size by WAR
+            }));
+
+            return { nodes, links };
+        } 
         
-        return {
-            nodes: [targetGraphNode, ...neighbors],
-            links: neighbors.map(n => ({ 
-                source: targetGraphNode.id, 
-                target: n.id, 
-                similarity: n.similarity 
-            }))
-        };
+        // --- CASE B: TARGET MODE (Single Player Focus) ---
+        else {
+            // Same logic, but centered on one player
+            const distances = [];
+            validPlayers.forEach(p => {
+                if (p.Name === targetPlayer) return;
+                
+                let distSq = 0;
+                let validCount = 0;
+                
+                activeMetricKeys.forEach(key => {
+                    const valA = parseFloat(targetNode[key]);
+                    const valB = parseFloat(p[key]);
+                    if (isNaN(valA) || isNaN(valB)) return;
+                    const zA = (valA - stats[key].mean) / stats[key].std;
+                    const zB = (valB - stats[key].mean) / stats[key].std;
+                    distSq += Math.pow(zA - zB, 2);
+                    validCount++;
+                });
+
+                if (validCount > 0) {
+                     distances.push({ ...p, dist: Math.sqrt(distSq) });
+                }
+            });
+
+            distances.sort((a, b) => a.dist - b.dist);
+            const neighbors = distances.slice(0, neighborCount); // Top X neighbors
+
+            const targetGraphNode = { ...targetNode, id: targetNode.Name, lastName: targetNode.Name.split(' ').pop(), group: targetNode.Archetype, val: 20 };
+            
+            const neighborNodes = neighbors.map(n => ({
+                ...n,
+                id: n.Name,
+                lastName: n.Name.split(' ').pop(),
+                group: n.Archetype || 'Balanced',
+                val: 10,
+                similarity: Math.exp(-n.dist / 2)
+            }));
+
+            const nodeSet = [targetGraphNode, ...neighborNodes];
+            const linkSet = neighborNodes.map(n => ({
+                source: targetGraphNode.id,
+                target: n.id,
+                similarity: n.similarity
+            }));
+
+            return { nodes: nodeSet, links: linkSet };
+        }
 
     }, [targetPlayer, allPlayers, neighborCount, selectedMetrics]);
 
-    // --- CAMERA & PHYSICS ENGINE (TUNED FOR "CLOUDS") ---
+    // --- CAMERA & PHYSICS ENGINE ---
     useEffect(() => {
-        // Preload Images
         graphData.nodes.forEach(node => {
             if (node.MLBID && !imgCache.current[node.MLBID]) {
                 const img = new Image();
@@ -430,20 +457,22 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         });
 
         if (fgRef.current) {
-            // EXPLOSIVE PHYSICS: High Charge + No Center
-            fgRef.current.d3Force('charge').strength(-800); 
+            // PREVENT CLUMPING
+            fgRef.current.d3Force('charge').strength(-120); 
             fgRef.current.d3Force('center', null); 
 
+            // DYNAMIC LINKS
             fgRef.current.d3Force('link').distance(link => {
-                if (link.type === 'archetype') return 120; // Looser clusters
-                if (link.similarity) {
-                    return 300 * (1 - link.similarity) + 40; 
-                }
-                return 100; 
+                if (!link.similarity) return 100;
+                // High Similarity (1.0) = Short Link (20px)
+                // Low Similarity (0.1) = Long Link (200px)
+                return 250 * (1 - link.similarity) + 20; 
             });
 
             fgRef.current.d3ReheatSimulation();
             
+            // Only zoom to fit if we selected a target. 
+            // In "Galaxy Mode", let it float naturally.
             if (targetPlayer) {
                  setTimeout(() => fgRef.current.zoomToFit(600, 50), 300);
             }
@@ -462,10 +491,12 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     // --- CANVAS PAINTING ---
     const paintNode = useCallback((node, ctx, globalScale) => {
         const isTarget = node.id === targetPlayer;
-        const size = isTarget ? 16 : (targetPlayer ? 8 : (globalScale > 1.5 ? 6 : 4));
-        const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
+        const size = isTarget ? 16 : (node.val / 2); // Scale size by WAR (val)
         
-        ctx.fillStyle = colors[node.group] || '#94a3b8';
+        // Color by Archetype
+        const colors = {'Power Pitcher': '#ef4444', 'Finesse': '#3b82f6', 'Balanced': '#a855f7'};
+        ctx.fillStyle = colors[node.group] || '#64748b';
+        
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fill();
@@ -482,7 +513,8 @@ export const SimilarityNetwork = ({ allPlayers }) => {
                 ctx.restore();
             }
         }
-        if (isTarget || globalScale > 1.5) {
+        // Labels
+        if (isTarget || globalScale > 2.5 || (node.val > 10 && globalScale > 1.5)) {
             const fontSize = isTarget ? 14 / globalScale : 10 / globalScale;
             ctx.font = `bold ${fontSize}px Sans-Serif`;
             ctx.textAlign = 'center';
@@ -495,12 +527,11 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         }
     }, [targetPlayer]);
 
-    // --- HITBOX PAINTING ---
     const nodePointerAreaPaint = useCallback((node, color, ctx) => {
-        const size = node.id === targetPlayer ? 16 : 8;
+        const size = node.id === targetPlayer ? 16 : (node.val / 2);
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
+        ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI, false);
         ctx.fill();
     }, [targetPlayer]);
 
@@ -510,7 +541,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
     const SimilarityTable = ({ targetNode, neighbors, metrics }) => {
         if (!targetNode) return null;
         
-        // Use mapped keys for data lookup, but display original labels
         const validMetrics = metrics.filter(m => {
             const key = metricMap[m] || m;
             return !isNaN(parseFloat(targetNode[key]));
@@ -521,7 +551,6 @@ export const SimilarityNetwork = ({ allPlayers }) => {
             if (isNaN(num)) return '-';
             if (metric.includes('%')) return (num * 100).toFixed(1) + '%';
             if (metric.includes('v') && metric.includes('(sc)')) return num.toFixed(1);
-            if (['ERA', 'SIERA', 'FIP'].includes(metric)) return num.toFixed(2);
             return num.toFixed(1);
         };
         return (
@@ -581,23 +610,22 @@ export const SimilarityNetwork = ({ allPlayers }) => {
         
         {/* GRAPH RENDERER */}
         <div className="graph-wrapper" style={{ flex: 1, height: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #334155', position: 'relative', overflow: 'hidden' }}>
-          {graphData.nodes.length === 0 && <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#64748b'}}>Select a player to generate network</div>}
+          {graphData.nodes.length === 0 && <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#64748b'}}>Loading Network...</div>}
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData}
             nodeCanvasObject={paintNode}
             nodePointerAreaPaint={nodePointerAreaPaint}
             
-            // --- PHYSICS SETTINGS (BOOSTED) ---
-            d3AlphaDecay={0.01}         
-            d3VelocityDecay={0.3}       
-            warmupTicks={400}           // Increased to 400 to break circle shape
+            // PHYSICS
+            d3AlphaDecay={0.02}         
+            d3VelocityDecay={0.4}       
+            warmupTicks={200}
             cooldownTicks={Infinity}    
-            // ---------------------------------
 
             nodeLabel="id"
-            linkColor={() => 'rgba(71, 85, 105, 0.4)'}
-            linkWidth={link => (link.similarity ? link.similarity * 3 : 1)}
+            linkColor={() => 'rgba(71, 85, 105, 0.2)'} // Lighter link color for web
+            linkWidth={link => (link.similarity ? link.similarity * 2 : 0.5)}
             backgroundColor="#0f172a"
             onNodeClick={node => { setInputValue(node.id); setTargetPlayer(node.id); }}
             enableNodeDrag={true} 
