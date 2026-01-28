@@ -167,9 +167,9 @@ const CameraRig = ({ view }) => {
             draggingSmoothTime={0.1}   // Reduced from 0.15 -> 0.1 (Stops faster, less "loose")
             
             // --- SENSITIVITY (Drastically Slowed Down) ---
-            rotateSpeed={0.1}          // Reduced from 0.5 -> 0.1 (Very precise)
-            truckSpeed={0.1}           // Reduced from 0.5 -> 0.1
-            dollySpeed={0.1}           // Reduced from 0.5 -> 0.1
+            rotateSpeed={0.05}          
+            truckSpeed={0.01}           
+            dollySpeed={0.1}           
             
             // --- CONSTRAINTS (UNLOCKED) ---
             minDistance={2}            
