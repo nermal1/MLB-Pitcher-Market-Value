@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Line, Grid, PerspectiveCamera, Billboard } from '@react-three/drei';
+import { Text, Line, Grid, PerspectiveCamera, Billboard, CameraControls } from '@react-three/drei';import { OrbitControls, Text, Line, Grid, PerspectiveCamera, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { getBallPosAtTime, getTotalFlightTime, getPitchColor } from './physics';
 
@@ -143,20 +142,41 @@ const AnimatedBall = ({ pitch, isPlaying, timeOffset, target }) => {
 };
 
 const CameraRig = ({ view }) => {
-    const { camera, controls } = useThree();
     const controlsRef = useRef();
 
+    // This effect runs whenever the 'view' prop changes (e.g. clicking "Catcher" button)
     useEffect(() => {
         const config = CAMERA_VIEWS[view];
         if (config && controlsRef.current) {
-            camera.position.set(...config.pos);
-            controlsRef.current.target.set(...config.target);
-            controlsRef.current.enabled = true; 
-            controlsRef.current.update();
+            // setLookAt(positionX, positionY, positionZ, targetX, targetY, targetZ, transition)
+            controlsRef.current.setLookAt(
+                config.pos[0], config.pos[1], config.pos[2],    // Camera Position
+                config.target[0], config.target[1], config.target[2], // Where to look
+                true // TRUE enables the smooth transition animation
+            );
         }
-    }, [view, camera]);
+    }, [view]);
 
-    return <OrbitControls ref={controlsRef} enablePan={true} zoomSpeed={0.5} rotateSpeed={0.5} />;
+    return (
+        <CameraControls 
+            ref={controlsRef} 
+            
+            // --- OPTION 1 FEATURES (SMOOTHING) ---
+            smoothTime={0.25}        // Smoothing for programmatic movement (flying between views)
+            draggingSmoothTime={0.15} // Smoothing for mouse dragging (adds weight)
+            
+            // --- SENSITIVITY CONTROLS ---
+            rotateSpeed={0.5}        // Lower = less twitchy
+            truckSpeed={0.5}         // Pan speed
+            dollySpeed={0.5}         // Zoom speed
+            
+            // --- LIMITS (Keep user on the field) ---
+            minDistance={2}
+            maxDistance={100}
+            maxPolarAngle={Math.PI / 2 - 0.05} // Prevent going underground
+            verticalDragToForward={false}      // Standard orbit behavior
+        />
+    );
 };
 
 // --- INTERACTIVE ZONE FIX ---
