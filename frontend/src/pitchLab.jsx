@@ -142,7 +142,7 @@ const AnimatedBall = ({ pitch, isPlaying, timeOffset, target }) => {
     return <mesh ref={meshRef} visible={false}><sphereGeometry args={[0.12]} /><meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.6} /></mesh>;
 };
 
-// --- UPDATED CAMERA RIG (Smooth + Precise) ---
+// --- UPDATED CAMERA RIG (SLOW + UNLOCKED) ---
 const CameraRig = ({ view }) => {
     const controlsRef = useRef();
 
@@ -164,18 +164,22 @@ const CameraRig = ({ view }) => {
             
             // --- SMOOTHING / FEEL ---
             smoothTime={0.25}          // Cinematic smoothing for button clicks
-            draggingSmoothTime={0.15}  // Adds weight to mouse drag (removes jitter)
+            draggingSmoothTime={0.1}   // Reduced from 0.15 -> 0.1 (Stops faster, less "loose")
             
-            // --- SENSITIVITY ---
-            rotateSpeed={0.5}          // Slower rotation for precision
-            truckSpeed={0.5}           // Slower panning
-            dollySpeed={0.5}           // Slower zoom
+            // --- SENSITIVITY (Drastically Slowed Down) ---
+            rotateSpeed={0.1}          // Reduced from 0.5 -> 0.1 (Very precise)
+            truckSpeed={0.1}           // Reduced from 0.5 -> 0.1
+            dollySpeed={0.1}           // Reduced from 0.5 -> 0.1
             
-            // --- CONSTRAINTS ---
-            minDistance={2}            // Prevent clipping into objects
-            maxDistance={100}          // Prevent flying too far away
-            maxPolarAngle={Math.PI / 2 - 0.05} // Prevent camera going under the ground
-            verticalDragToForward={false} // Ensures drag rotates around center, doesn't move forward
+            // --- CONSTRAINTS (UNLOCKED) ---
+            minDistance={2}            
+            maxDistance={100}          
+            
+            // Allow looking fully up and fully down (No 90 degree lock)
+            minPolarAngle={0}          // Top down view allowed
+            maxPolarAngle={Math.PI}    // Bottom up view allowed (Underground)
+            
+            verticalDragToForward={false} 
         />
     );
 };
