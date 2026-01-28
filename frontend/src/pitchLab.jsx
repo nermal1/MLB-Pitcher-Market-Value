@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Text, Line, Grid, PerspectiveCamera, Billboard, CameraControls } from '@react-three/drei';import { OrbitControls, Text, Line, Grid, PerspectiveCamera, Billboard } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Text, Line, Grid, PerspectiveCamera, Billboard, CameraControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { getBallPosAtTime, getTotalFlightTime, getPitchColor } from './physics';
 
@@ -141,17 +142,17 @@ const AnimatedBall = ({ pitch, isPlaying, timeOffset, target }) => {
     return <mesh ref={meshRef} visible={false}><sphereGeometry args={[0.12]} /><meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.6} /></mesh>;
 };
 
+// --- UPDATED CAMERA RIG (Smooth + Precise) ---
 const CameraRig = ({ view }) => {
     const controlsRef = useRef();
 
-    // This effect runs whenever the 'view' prop changes (e.g. clicking "Catcher" button)
+    // Smoothly fly to new views when the user clicks buttons
     useEffect(() => {
         const config = CAMERA_VIEWS[view];
         if (config && controlsRef.current) {
-            // setLookAt(positionX, positionY, positionZ, targetX, targetY, targetZ, transition)
             controlsRef.current.setLookAt(
-                config.pos[0], config.pos[1], config.pos[2],    // Camera Position
-                config.target[0], config.target[1], config.target[2], // Where to look
+                config.pos[0], config.pos[1], config.pos[2],       // Camera Position
+                config.target[0], config.target[1], config.target[2], // Target Position
                 true // TRUE enables the smooth transition animation
             );
         }
@@ -161,33 +162,29 @@ const CameraRig = ({ view }) => {
         <CameraControls 
             ref={controlsRef} 
             
-            // --- OPTION 1 FEATURES (SMOOTHING) ---
-            smoothTime={0.25}        // Smoothing for programmatic movement (flying between views)
-            draggingSmoothTime={0.15} // Smoothing for mouse dragging (adds weight)
+            // --- SMOOTHING / FEEL ---
+            smoothTime={0.25}          // Cinematic smoothing for button clicks
+            draggingSmoothTime={0.15}  // Adds weight to mouse drag (removes jitter)
             
-            // --- SENSITIVITY CONTROLS ---
-            rotateSpeed={0.5}        // Lower = less twitchy
-            truckSpeed={0.5}         // Pan speed
-            dollySpeed={0.5}         // Zoom speed
+            // --- SENSITIVITY ---
+            rotateSpeed={0.5}          // Slower rotation for precision
+            truckSpeed={0.5}           // Slower panning
+            dollySpeed={0.5}           // Slower zoom
             
-            // --- LIMITS (Keep user on the field) ---
-            minDistance={2}
-            maxDistance={100}
-            maxPolarAngle={Math.PI / 2 - 0.05} // Prevent going underground
-            verticalDragToForward={false}      // Standard orbit behavior
+            // --- CONSTRAINTS ---
+            minDistance={2}            // Prevent clipping into objects
+            maxDistance={100}          // Prevent flying too far away
+            maxPolarAngle={Math.PI / 2 - 0.05} // Prevent camera going under the ground
+            verticalDragToForward={false} // Ensures drag rotates around center, doesn't move forward
         />
     );
 };
 
-// --- INTERACTIVE ZONE FIX ---
-// The plane must be visible (but transparent) to intercept clicks.
 const InteractiveZone = ({ onSelectTarget, editingPitch }) => {
-    // Only render the helper if we are currently editing a pitch
     if (!editingPitch) return null;
 
     return (
         <group position={[0, 2.5, 0]}>
-            {/* Visual Grid to help aiming */}
             <Grid 
                 args={[4, 4]} 
                 cellSize={0.5} 
@@ -197,10 +194,9 @@ const InteractiveZone = ({ onSelectTarget, editingPitch }) => {
                 sectionThickness={1} 
                 sectionColor={new THREE.Color('#f59e0b')} 
                 fadeDistance={10} 
-                rotation={[Math.PI / 2, 0, 0]} // Rotate to face camera
+                rotation={[Math.PI / 2, 0, 0]} 
             />
             
-            {/* Invisible Clickable Plane */}
             <mesh 
                 onClick={(e) => { 
                     e.stopPropagation(); 
@@ -211,7 +207,7 @@ const InteractiveZone = ({ onSelectTarget, editingPitch }) => {
                 <meshBasicMaterial 
                     color="#f59e0b" 
                     transparent 
-                    opacity={0.15} // Slight opacity so user sees where they can click
+                    opacity={0.15} 
                     side={THREE.DoubleSide} 
                 />
             </mesh>
@@ -256,7 +252,6 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
         return { arsenal: processed, isLefty: detectedLefty };
     }, [player]);
 
-    // Initial Filter Setup
     useEffect(() => { 
         if(arsenal.length > 0) {
             setActiveTypes(arsenal.map(p => p.code));
@@ -265,7 +260,6 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
         }
     }, [arsenal]);
 
-    // Animation Loop
     useEffect(() => {
         if (!isPlaying) return;
         let lastTime = performance.now();
@@ -311,18 +305,16 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
     return (
         <div className="pitch-lab-container fade-in" style={{ height: '100%', width: '100%', background: '#0f172a', position: 'relative', overflow: 'hidden', display: 'flex' }}>
             
-            {/* --- LEFT SIDEBAR: COMPACT (220px) --- */}
+            {/* --- LEFT SIDEBAR --- */}
             <div style={{ width: '220px', background: 'rgba(15, 23, 42, 0.95)', borderRight: '1px solid #334155', padding: '15px', zIndex: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
                 <h2 style={{margin: '0 0 10px 0', fontSize: '1.2rem', color: 'white', whiteSpace: 'nowrap'}}>Pitch Lab <span style={{color: '#a855f7'}}>3D</span></h2>
                 
-                {/* Search */}
                 <div style={{marginBottom: '15px'}}>
                     <input type="text" list="lab-players" placeholder="Search Pitcher..." value={search} onChange={handleSearch} 
                         style={{width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #475569', background: '#1e293b', color: 'white', outline: 'none', fontSize: '0.9rem'}} />
                     <datalist id="lab-players">{allPlayers && allPlayers.map(p => <option key={p.Name} value={p.Name} />)}</datalist>
                 </div>
 
-                {/* Player Info */}
                 {player ? (
                     <div style={{marginBottom: '15px'}}>
                         <h3 style={{margin: '0 0 4px 0', color: 'white', fontSize: '1rem'}}>{player.Name}</h3>
@@ -333,7 +325,6 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                     </div>
                 ) : <div style={{color: '#64748b', fontSize: '0.85rem'}}>Select a player to begin analysis.</div>}
 
-                {/* Arsenal Toggles (Compact) */}
                 {player && (
                     <div style={{display: 'flex', flexDirection: 'column', gap: '6px', flex: 1}}>
                         <div style={{fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px'}}>Arsenal</div>
@@ -355,13 +346,11 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                     </div>
                 )}
 
-                {/* Speed Slider & Action Button */}
                 <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid #334155' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#94a3b8', fontSize: '0.75rem' }}>
                         <span>Speed</span>
                         <span>{(playbackSpeed * 100).toFixed(0)}%</span>
                     </div>
-                    {/* FIXED: Slider constrained */}
                     <input 
                         type="range" min="0.05" max="1.0" step="0.05" value={playbackSpeed} 
                         onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))} 
@@ -378,10 +367,8 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                 </div>
             </div>
 
-            {/* --- RIGHT HUD --- */}
             <PitchHUD activePitches={activePitchData} isLefty={isLefty} />
 
-            {/* --- BOTTOM RIGHT CAMERA CONTROLS --- */}
             <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 20, display: 'flex', gap: '5px', background: 'rgba(15,23,42,0.9)', padding: '5px', borderRadius: '8px', border: '1px solid #334155' }}>
                 {Object.keys(CAMERA_VIEWS).map(v => (
                     <button key={v} onClick={() => setView(v)} 
@@ -391,14 +378,12 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
                 ))}
             </div>
 
-            {/* --- CENTER ALERT (Editing Mode) --- */}
             {editingPitch && (
                 <div style={{position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 30, background: '#f59e0b', color: 'black', padding: '8px 16px', borderRadius: '20px', fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', marginLeft: '110px'}}>
                     Click Strike Zone to place {editingPitch}
                 </div>
             )}
 
-            {/* --- 3D CANVAS (Expands to fill remaining width) --- */}
             <div style={{ flex: 1, position: 'relative', height: '100%', overflow: 'hidden' }}>
                 <Canvas>
                     <PerspectiveCamera makeDefault fov={40} />
