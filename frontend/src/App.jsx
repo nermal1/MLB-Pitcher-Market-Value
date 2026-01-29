@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
-import { BrowserRouter, Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import './App.css'
 
 // --- COMPONENT IMPORTS ---
@@ -19,6 +19,14 @@ const API_BASE_URL = 'https://pitch-lab-api.onrender.com';
 // We need this to handle the props passing correctly for the PitchLab
 const PitchLabWrapper = ({ data }) => {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.state && location.state.targetPlayer) {
+      setSelectedPlayer(location.state.targetPlayer);
+    }
+  }, [location]);
+
   return (
       <div style={{ display: 'flex', minHeight: '600px', width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', overflow: 'hidden', margin: '20px' }}>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
@@ -45,8 +53,9 @@ function App() {
     axios.get(`${API_BASE_URL}/pitchers`, { params: { limit: 2500, sort_by: 'WAR', sort_order: 'desc' } })
       .then(response => {
         let rawData = response.data.data;
-        // Data Normalization
-        const normalized = rawData.map(p => {
+
+        // 1. Data Normalization
+        let normalized = rawData.map(p => {
             let team = p.Team;
             if (team === 'CHW') team = 'CWS'; 
             if (team === 'ATH') team = 'OAK'; 
@@ -57,6 +66,42 @@ function App() {
             if (team === 'SFG') team = 'SF';
             return { ...p, Team: team };
         });
+
+        // 2. Percentile Calculation Helper
+        const calculatePercentiles = (data, key, lowerIsBetter = false) => {
+          // Sort safe copy of data
+          const sorted = [...data].sort((a, b) => {
+            const valA = a[key] !== undefined && a[key] !== null ? a[key] : (lowerIsBetter ? 999 : -999);
+            const valB = b[key] !== undefined && b[key] !== null ? b[key] : (lowerIsBetter ? 999 : -999);
+            return lowerIsBetter ? valB - valA : valA - valB; 
+          });
+
+          const rankMap = new Map();
+          sorted.forEach((p, index) => {
+            // Rank 0 = 0th percentile, Rank N = 100th percentile
+            rankMap.set(p.MLBID, (index / sorted.length) * 100);
+          });
+
+          return rankMap;
+        };
+
+        // 3. Calculate Ranks for Specific Stats
+        const eraRanks = calculatePercentiles(normalized, 'ERA', true); // Lower ERA is better
+        const kwarRanks = calculatePercentiles(normalized, 'kWAR', false); // Higher WAR is better
+        const kPctRanks = calculatePercentiles(normalized, 'K%', false);
+        const veloRanks = calculatePercentiles(normalized, 'vFA (sc)', false);
+        const stuffRanks = calculatePercentiles(normalized, 'Stuff+', false);
+
+        // 4. Merge Ranks back into Player Objects
+        normalized = normalized.map(p => ({
+            ...p,
+            ERA_pct: p.ERA_pct || eraRanks.get(p.MLBID),
+            kWAR_pct: p.kWAR_pct || kwarRanks.get(p.MLBID),
+            'K%_pct': p['K%_pct'] || kPctRanks.get(p.MLBID),
+            'vFA (sc)_pct': p['vFA (sc)_pct'] || veloRanks.get(p.MLBID),
+            'Stuff+_pct': p['Stuff+_pct'] || stuffRanks.get(p.MLBID)
+        }));
+
         setGlobalData(normalized);
         setLoading(false);
       })
@@ -99,7 +144,6 @@ function App() {
               {/* 2. Player Profile (The new page) */}
               <Route 
                 path="/player/:id" 
-                // We pass a function to handle the "Open Lab" click
                 element={<PlayerProfileWrapper data={globalData} />} 
               />
               
@@ -120,13 +164,12 @@ function App() {
 const PlayerProfileWrapper = ({ data }) => {
     const navigate = useNavigate();
     
-    // When user clicks "Open in Pitch Lab", we navigate to /lab 
-    // Note: To automatically select that player in the Lab, 
-    // you might need a global context or pass state via navigate state, 
-    // but for now, we just direct them there.
+    // Note: The actual navigation logic is handled inside PlayerProfile.jsx
+    // This wrapper simply passes data down.
+    
+    // We pass a dummy handler if needed, but the Profile handles the logic itself now via router state.
     const handleOpenLab = (player) => {
-        navigate('/lab');
-        // Ideally, you would pass the player ID to the Lab URL like /lab/12345
+        navigate('/lab', { state: { targetPlayer: player } });
     };
 
     return <PlayerProfile data={data} onOpenLab={handleOpenLab} />;

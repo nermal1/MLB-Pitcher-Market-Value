@@ -142,43 +142,43 @@ const AnimatedBall = ({ pitch, isPlaying, timeOffset, target }) => {
     return <mesh ref={meshRef} visible={false}><sphereGeometry args={[0.12]} /><meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.6} /></mesh>;
 };
 
-// --- UPDATED CAMERA RIG (SLOW + UNLOCKED) ---
+// --- UPDATED CAMERA RIG (AUTO-INIT FIX) ---
 const CameraRig = ({ view }) => {
     const controlsRef = useRef();
 
-    // Smoothly fly to new views when the user clicks buttons
     useEffect(() => {
         const config = CAMERA_VIEWS[view];
-        if (config && controlsRef.current) {
-            controlsRef.current.setLookAt(
-                config.pos[0], config.pos[1], config.pos[2],       // Camera Position
-                config.target[0], config.target[1], config.target[2], // Target Position
-                true // TRUE enables the smooth transition animation
-            );
-        }
+        if (!config) return;
+
+        // Function to apply view, retrying if controls aren't ready yet
+        const applyView = () => {
+            if (controlsRef.current) {
+                controlsRef.current.setLookAt(
+                    config.pos[0], config.pos[1], config.pos[2],       // Position
+                    config.target[0], config.target[1], config.target[2], // Target
+                    true // Enable transition
+                );
+            } else {
+                // If ref is null (initial load), try again next frame
+                requestAnimationFrame(applyView);
+            }
+        };
+
+        applyView();
     }, [view]);
 
     return (
         <CameraControls 
             ref={controlsRef} 
-            
-            // --- SMOOTHING / FEEL ---
-            smoothTime={0.25}          // Cinematic smoothing for button clicks
-            draggingSmoothTime={0.1}   // Reduced from 0.15 -> 0.1 (Stops faster, less "loose")
-            
-            // --- SENSITIVITY (Drastically Slowed Down) ---
+            smoothTime={0.25}          
+            draggingSmoothTime={0.1}   
             rotateSpeed={0.05}          
             truckSpeed={0.01}           
             dollySpeed={0.1}           
-            
-            // --- CONSTRAINTS (UNLOCKED) ---
             minDistance={2}            
             maxDistance={100}          
-            
-            // Allow looking fully up and fully down (No 90 degree lock)
-            minPolarAngle={0}          // Top down view allowed
-            maxPolarAngle={Math.PI}    // Bottom up view allowed (Underground)
-            
+            minPolarAngle={0}          
+            maxPolarAngle={Math.PI}    
             verticalDragToForward={false} 
         />
     );
