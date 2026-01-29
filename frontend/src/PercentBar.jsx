@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 
-const PercentileBar = memo(({ label, value, percentile, suffix = '', colorOverride = null }) => {
+const PercentBar = memo(({ label, value, percentile, suffix = '', colorOverride = null }) => {
   // Savant Style: 100% = Red (Hue 0), 0% = Blue (Hue 240)
   // We calculate Hue based on percentile.
   const hue = (100 - (percentile || 50)) * 2.4; 
@@ -39,4 +39,4 @@ const PercentileBar = memo(({ label, value, percentile, suffix = '', colorOverri
   );
 });
 
-export default PercentileBar;
+export default PercentBar;
