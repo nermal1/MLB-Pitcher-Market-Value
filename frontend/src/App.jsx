@@ -10,13 +10,10 @@ import { PitchLab } from './pitchLab';
 import { ChartsView, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
 
-// Placeholder for Glossary (You can paste your Glossary code into a file named GlossaryView.jsx later)
-const GlossaryView = () => <div style={{padding:'20px', color:'white'}}><h2>Glossary Moved</h2><p>Please create GlossaryView.jsx and import it.</p></div>;
+const GlossaryView = () => <div style={{padding:'20px', color:'white'}}><h2>Glossary</h2><p>Glossary content goes here.</p></div>;
 
 const API_BASE_URL = 'https://pitch-lab-api.onrender.com';
 
-// Wrapper to handle PitchLab navigation from Profile
-// We need this to handle the props passing correctly for the PitchLab
 const PitchLabWrapper = ({ data }) => {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const location = useLocation();
@@ -47,6 +44,13 @@ function App() {
   const [globalData, setGlobalData] = useState([]); 
   const [loading, setLoading] = useState(true);
 
+  // --- LIFTED STATE (These keep your filters alive when you navigate away) ---
+  const [search, setSearch] = useState('');
+  const [teamFilter, setTeamFilter] = useState('All');
+  const [sortConfig, setSortConfig] = useState({ key: 'WAR', direction: 'desc' });
+  const [viewMode, setViewMode] = useState('grid');
+  const [page, setPage] = useState(0);
+
   // --- INITIAL DATA FETCH ---
   useEffect(() => {
     setLoading(true);
@@ -57,6 +61,7 @@ function App() {
         // 1. Data Normalization
         let normalized = rawData.map(p => {
             let team = p.Team;
+            // Fix Team Codes
             if (team === 'CHW') team = 'CWS'; 
             if (team === 'ATH') team = 'OAK'; 
             if (team === 'WAS') team = 'WSH';
@@ -64,12 +69,16 @@ function App() {
             if (team === 'KCR') team = 'KC';
             if (team === 'SDP') team = 'SD';
             if (team === 'SFG') team = 'SF';
-            return { ...p, Team: team };
+
+            // FIX JERSEY NUMBERS: Try to find the number in different common property names
+            // If your API uses a specific name like 'jersey_number', add it here
+            const number = p.Number || p.JerseyNumber || p.jersey_number || p.uniform_number || '00';
+
+            return { ...p, Team: team, Number: number };
         });
 
         // 2. Percentile Calculation Helper
         const calculatePercentiles = (data, key, lowerIsBetter = false) => {
-          // Sort safe copy of data
           const sorted = [...data].sort((a, b) => {
             const valA = a[key] !== undefined && a[key] !== null ? a[key] : (lowerIsBetter ? 999 : -999);
             const valB = b[key] !== undefined && b[key] !== null ? b[key] : (lowerIsBetter ? 999 : -999);
@@ -78,21 +87,18 @@ function App() {
 
           const rankMap = new Map();
           sorted.forEach((p, index) => {
-            // Rank 0 = 0th percentile, Rank N = 100th percentile
             rankMap.set(p.MLBID, (index / sorted.length) * 100);
           });
 
           return rankMap;
         };
 
-        // 3. Calculate Ranks for Specific Stats
-        const eraRanks = calculatePercentiles(normalized, 'ERA', true); // Lower ERA is better
-        const kwarRanks = calculatePercentiles(normalized, 'kWAR', false); // Higher WAR is better
+        const eraRanks = calculatePercentiles(normalized, 'ERA', true); 
+        const kwarRanks = calculatePercentiles(normalized, 'kWAR', false);
         const kPctRanks = calculatePercentiles(normalized, 'K%', false);
         const veloRanks = calculatePercentiles(normalized, 'vFA (sc)', false);
         const stuffRanks = calculatePercentiles(normalized, 'Stuff+', false);
 
-        // 4. Merge Ranks back into Player Objects
         normalized = normalized.map(p => ({
             ...p,
             ERA_pct: p.ERA_pct || eraRanks.get(p.MLBID),
@@ -115,7 +121,6 @@ function App() {
     <BrowserRouter>
       <div className="container" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
-        {/* --- GLOBAL HEADER --- */}
         <header className="main-header">
           <div className="header-top">
             <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -132,22 +137,24 @@ function App() {
           </div>
         </header>
 
-        {/* --- MAIN CONTENT AREA --- */}
         <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>
           {loading ? (
              <div className="loading-state">Loading Data...</div>
           ) : (
             <Routes>
-              {/* 1. Home / List View */}
-              <Route path="/" element={<PlayerList data={globalData} />} />
+              {/* WE PASS THE STATE AND SETTERS DOWN TO PLAYERLIST */}
+              <Route path="/" element={
+                <PlayerList 
+                  data={globalData} 
+                  search={search} setSearch={setSearch}
+                  teamFilter={teamFilter} setTeamFilter={setTeamFilter}
+                  sortConfig={sortConfig} setSortConfig={setSortConfig}
+                  viewMode={viewMode} setViewMode={setViewMode}
+                  page={page} setPage={setPage}
+                />
+              } />
               
-              {/* 2. Player Profile (The new page) */}
-              <Route 
-                path="/player/:id" 
-                element={<PlayerProfileWrapper data={globalData} />} 
-              />
-              
-              {/* 3. Other Views */}
+              <Route path="/player/:id" element={<PlayerProfileWrapper data={globalData} />} />
               <Route path="/charts" element={<ChartsView data={globalData} />} />
               <Route path="/network" element={<SimilarityNetwork allPlayers={globalData} />} />
               <Route path="/lab" element={<PitchLabWrapper data={globalData} />} />
@@ -160,18 +167,11 @@ function App() {
   )
 }
 
-// Wrapper to handle navigation from Profile -> Lab
 const PlayerProfileWrapper = ({ data }) => {
     const navigate = useNavigate();
-    
-    // Note: The actual navigation logic is handled inside PlayerProfile.jsx
-    // This wrapper simply passes data down.
-    
-    // We pass a dummy handler if needed, but the Profile handles the logic itself now via router state.
     const handleOpenLab = (player) => {
         navigate('/lab', { state: { targetPlayer: player } });
     };
-
     return <PlayerProfile data={data} onOpenLab={handleOpenLab} />;
 }
 

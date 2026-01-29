@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlayerHeadshot, TeamLogo, TEAM_LOGOS } from './Shared'; // Importing from Shared
+import { PlayerHeadshot, TeamLogo, TEAM_LOGOS } from './Shared';
 import PercentileBar from './PercentBar';
 
-// Helper to show pitch badges on the card
 const PitchArsenal = memo(({ player }) => {
     const pitchConfig = [{ code: 'FA', color: '#d946ef' }, { code: 'FC', color: '#9333ea' }, { code: 'SI', color: '#e879f9' }, { code: 'SL', color: '#f59e0b' }, { code: 'CU', color: '#06b6d4' }, { code: 'CH', color: '#10b981' }, { code: 'FS', color: '#3b82f6' }];
     
@@ -22,18 +21,18 @@ const PitchArsenal = memo(({ player }) => {
     )
 });
 
-const PlayerList = ({ data }) => {
+// ACCEPT ALL STATE AS PROPS NOW
+const PlayerList = ({ 
+    data, 
+    search, setSearch, 
+    teamFilter, setTeamFilter, 
+    sortConfig, setSortConfig, 
+    viewMode, setViewMode, 
+    page, setPage 
+}) => {
+  
   const navigate = useNavigate();
-
-  // --- LOCAL STATE FOR FILTERS ---
-  const [viewMode, setViewMode] = useState('grid');
-  const [search, setSearch] = useState('');
-  const [teamFilter, setTeamFilter] = useState('All');
-  const [sortConfig, setSortConfig] = useState({ key: 'WAR', direction: 'desc' });
-  const [page, setPage] = useState(0);
   const rowsPerPage = 50;
-
-  // --- DERIVED DATA ---
   const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
   
   const filteredPitchers = useMemo(() => {
@@ -54,14 +53,26 @@ const PlayerList = ({ data }) => {
     return filteredPitchers.slice(start, start + rowsPerPage);
   }, [filteredPitchers, page]);
 
-  // --- HANDLERS ---
+  // If search or filter changes, reset page to 0
+  // (We use useMemo so we don't need a useEffect here that triggers infinite loops)
+  // Actually, standard practice is to reset page in the onChange handlers below.
+
   const handleSort = (key) => {
       setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
       setPage(0);
   };
 
+  const handleTeamChange = (e) => {
+      setTeamFilter(e.target.value);
+      setPage(0);
+  }
+
+  const handleSearchChange = (e) => {
+      setSearch(e.target.value);
+      setPage(0);
+  }
+
   const goToProfile = (player) => {
-      // NAVIGATE TO THE NEW PROFILE PAGE
       navigate(`/player/${player.MLBID}`);
   };
 
@@ -69,9 +80,9 @@ const PlayerList = ({ data }) => {
     <div className="fade-in">
       {/* --- CONTROLS BAR --- */}
       <div className="controls" style={{ padding: '15px', background: '#1e293b', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-        <input className="search-input" type="text" placeholder="Search Player..." value={search} onChange={e => setSearch(e.target.value)} />
+        <input className="search-input" type="text" placeholder="Search Player..." value={search} onChange={handleSearchChange} />
         
-        <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}>
+        <select value={teamFilter} onChange={handleTeamChange}>
           <option value="All">All Teams</option>
           {teamList.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -149,7 +160,7 @@ const PlayerList = ({ data }) => {
         </div>
       )}
 
-      {/* Pagination (Simplified) */}
+      {/* Pagination */}
       <div className="pagination-bar" style={{ padding: '20px', textAlign: 'center' }}>
           <button disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
           <span style={{ margin: '0 15px' }}>Page {page + 1}</span>

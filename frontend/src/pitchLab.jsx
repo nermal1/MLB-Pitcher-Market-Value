@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { Text, Line, Grid, PerspectiveCamera, Billboard, CameraControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { getBallPosAtTime, getTotalFlightTime, getPitchColor } from './physics';
@@ -15,11 +15,11 @@ const PITCH_NAMES = {
 
 // --- CAMERA CONFIGURATION ---
 const CAMERA_VIEWS = {
-    catcher: { pos: [-0.0, 2.0, -4.5], target: [0.0, 3.5, 60.5], static: false }, 
-    pitcher: { pos: [-2.5, 6.0, 64.0], target: [0.0, 1.5, 0.0], static: false },
-    rhh: { pos: [1.8, 3.0, -4.0], target: [0.0, 3.5, 55.0], static: false },
-    lhh: { pos: [-1.8, 3.0, -4.0], target: [0.0, 3.5, 55.0], static: false },
-    side: { pos: [25, 6, 30], target: [0, 3, 30], static: false }
+    catcher: { pos: [-0.0, 2.0, -4.5], target: [0.0, 3.5, 60.5] }, 
+    pitcher: { pos: [-2.5, 6.0, 64.0], target: [0.0, 1.5, 0.0] },
+    rhh: { pos: [1.8, 3.0, -4.0], target: [0.0, 3.5, 55.0] },
+    lhh: { pos: [-1.8, 3.0, -4.0], target: [0.0, 3.5, 55.0] },
+    side: { pos: [25, 6, 30], target: [0, 3, 30] }
 };
 
 // --- VISUAL COMPONENTS ---
@@ -142,24 +142,31 @@ const AnimatedBall = ({ pitch, isPlaying, timeOffset, target }) => {
     return <mesh ref={meshRef} visible={false}><sphereGeometry args={[0.12]} /><meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.6} /></mesh>;
 };
 
-// --- UPDATED CAMERA RIG (AUTO-INIT FIX) ---
+// --- UPDATED CAMERA RIG ---
 const CameraRig = ({ view }) => {
     const controlsRef = useRef();
+    const isInit = useRef(true); // Track first load
 
     useEffect(() => {
         const config = CAMERA_VIEWS[view];
         if (!config) return;
 
-        // Function to apply view, retrying if controls aren't ready yet
         const applyView = () => {
             if (controlsRef.current) {
+                // If it's the very first load (isInit is true), we use 'false' for transition (Instant Snap)
+                // Otherwise we use 'true' for a smooth animation
+                const enableTransition = !isInit.current;
+                
                 controlsRef.current.setLookAt(
-                    config.pos[0], config.pos[1], config.pos[2],       // Position
-                    config.target[0], config.target[1], config.target[2], // Target
-                    true // Enable transition
+                    config.pos[0], config.pos[1], config.pos[2],       // Camera Position
+                    config.target[0], config.target[1], config.target[2], // Target Position
+                    enableTransition 
                 );
+                
+                // After first application, future moves should be smooth
+                isInit.current = false;
             } else {
-                // If ref is null (initial load), try again next frame
+                // If controls aren't ready, try again on next frame
                 requestAnimationFrame(applyView);
             }
         };
@@ -178,8 +185,8 @@ const CameraRig = ({ view }) => {
             minDistance={2}            
             maxDistance={100}          
             minPolarAngle={0}          
-            maxPolarAngle={Math.PI}    
-            verticalDragToForward={false} 
+            maxPolarAngle={Math.PI}
+            // verticalDragToForward removed to fix console error
         />
     );
 };
@@ -390,8 +397,15 @@ export const PitchLab = ({ player, allPlayers, setPlayer }) => {
 
             <div style={{ flex: 1, position: 'relative', height: '100%', overflow: 'hidden' }}>
                 <Canvas>
-                    <PerspectiveCamera makeDefault fov={40} />
+                    {/* Position set manually here to prevent black screen on load */}
+                    <PerspectiveCamera 
+                        makeDefault 
+                        fov={40} 
+                        position={[-0.0, 2.0, -4.5]}
+                    />
+                    
                     <CameraRig view={view} />
+                    
                     <ambientLight intensity={0.8} />
                     <pointLight position={[10, 20, 10]} intensity={1.2} />
                     
