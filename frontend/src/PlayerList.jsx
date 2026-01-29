@@ -1,7 +1,24 @@
-import React, { useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlayerHeadshot, TeamLogo, TEAM_LOGOS } from './Shared';
 import PercentileBar from './PercentBar';
+
+// --- CONFIGURATION ---
+const COLUMN_CATEGORIES = {
+  basic: [
+    'WAR', 'kWAR', 'kWAR_Diff', 'ERA', 'WHIP', 'IP', 'G', 'GS', 'W', 'L', 'SV', 'HLD',
+    'K%', 'BB%', 'K/9', 'BB/9', 'HR/9', 'BABIP', 'LOB%'
+  ],
+  advanced: [
+    'SIERA', 'FIP', 'xFIP', 'Stuff+', 'Location+', 'Pitching+', 'BotStf', 'BotCmd', 'BotOvr',
+    'vFA (sc)', 'vSL (sc)', 'vCU (sc)', 'vCH (sc)', 
+    'SwStr%', 'CSW%', 'HardHit%', 'Barrel%', 'GB%', 'LD%', 'FB%', 
+    'O-Swing%', 'Z-Swing%', 'Contact%', 'Zone%', 
+    'WPA', 'RE24', 'gmLI', 'Clutch', 'SD', 'MD'
+  ]
+};
+
+const DEFAULT_COLS = ['WAR', 'kWAR', 'ERA', 'WHIP', 'K%', 'Stuff+', 'SIERA'];
 
 const PitchArsenal = memo(({ player }) => {
     const pitchConfig = [{ code: 'FA', color: '#d946ef' }, { code: 'FC', color: '#9333ea' }, { code: 'SI', color: '#e879f9' }, { code: 'SL', color: '#f59e0b' }, { code: 'CU', color: '#06b6d4' }, { code: 'CH', color: '#10b981' }, { code: 'FS', color: '#3b82f6' }];
@@ -21,7 +38,6 @@ const PitchArsenal = memo(({ player }) => {
     )
 });
 
-// ACCEPT ALL STATE AS PROPS NOW
 const PlayerList = ({ 
     data, 
     search, setSearch, 
@@ -33,16 +49,22 @@ const PlayerList = ({
   
   const navigate = useNavigate();
   const rowsPerPage = 50;
+  
+  // --- LOCAL STATE FOR COLUMNS ---
+  const [visibleCols, setVisibleCols] = useState(DEFAULT_COLS);
+  const [showColModal, setShowColModal] = useState(false);
+
   const teamList = useMemo(() => Object.keys(TEAM_LOGOS).sort(), []);
   
+  // --- DATA FILTERING ---
   const filteredPitchers = useMemo(() => {
     let res = [...data];
     if (teamFilter !== 'All') res = res.filter(p => p.Team === teamFilter);
     if (search) res = res.filter(p => p.Name.toLowerCase().includes(search.toLowerCase()));
     
     res.sort((a, b) => {
-        const valA = a[sortConfig.key] || 0;
-        const valB = b[sortConfig.key] || 0;
+        const valA = a[sortConfig.key] !== undefined && a[sortConfig.key] !== null ? a[sortConfig.key] : -999;
+        const valB = b[sortConfig.key] !== undefined && b[sortConfig.key] !== null ? b[sortConfig.key] : -999;
         return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
     });
     return res;
@@ -53,10 +75,7 @@ const PlayerList = ({
     return filteredPitchers.slice(start, start + rowsPerPage);
   }, [filteredPitchers, page]);
 
-  // If search or filter changes, reset page to 0
-  // (We use useMemo so we don't need a useEffect here that triggers infinite loops)
-  // Actually, standard practice is to reset page in the onChange handlers below.
-
+  // --- HANDLERS ---
   const handleSort = (key) => {
       setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
       setPage(0);
@@ -76,10 +95,39 @@ const PlayerList = ({
       navigate(`/player/${player.MLBID}`);
   };
 
+  // --- COLUMN MODAL HANDLERS ---
+  const toggleCol = (col) => setVisibleCols(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+  const selectAll = (cat) => setVisibleCols(prev => [...new Set([...prev, ...COLUMN_CATEGORIES[cat]])]);
+  const deselectAll = (cat) => setVisibleCols(prev => prev.filter(c => !COLUMN_CATEGORIES[cat].includes(c)));
+
+  // --- FORMATTER ---
+  const formatCell = (player, col) => {
+    let val = player[col];
+    if (val === undefined || val === null) return '-';
+    
+    // Percentages
+    if (['K%', 'BB%', 'GB%', 'LD%', 'FB%', 'SwStr%', 'CSW%', 'HardHit%', 'LOB%', 'Barrel%', 'O-Swing%', 'Z-Swing%', 'Contact%', 'Zone%'].includes(col)) {
+        return (val * 100).toFixed(1) + '%';
+    }
+    // Decimals
+    if (['ERA', 'SIERA', 'FIP', 'xFIP', 'WHIP', 'K/9', 'BB/9', 'HR/9'].includes(col)) {
+        return val.toFixed(2);
+    }
+    // Integers / Whole Numbers
+    if (['Stuff+', 'Location+', 'Pitching+', 'G', 'GS', 'W', 'L', 'SV', 'HLD'].includes(col)) {
+        return Math.round(val);
+    }
+    // Velocity
+    if (col.includes('v') && col.includes('(sc)')) {
+        return val.toFixed(1);
+    }
+    return val;
+  };
+
   return (
     <div className="fade-in">
       {/* --- CONTROLS BAR --- */}
-      <div className="controls" style={{ padding: '15px', background: '#1e293b', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+      <div className="controls" style={{ padding: '15px', background: '#1e293b', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input className="search-input" type="text" placeholder="Search Player..." value={search} onChange={handleSearchChange} />
         
         <select value={teamFilter} onChange={handleTeamChange}>
@@ -87,15 +135,13 @@ const PlayerList = ({
           {teamList.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
 
-        <select value={sortConfig.key} onChange={e => handleSort(e.target.value)}>
-           <option value="WAR">Sort: WAR</option>
-           <option value="kWAR">Sort: kWAR</option>
-           <option value="ERA">Sort: ERA</option>
-           <option value="Stuff+">Sort: Stuff+</option>
-           <option value="vFA (sc)">Sort: Velocity</option>
-        </select>
-
-        <div className="view-toggle-group" style={{ marginLeft: 'auto' }}>
+        {/* View Toggles */}
+        <div className="view-toggle-group" style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+           {viewMode === 'table' && (
+             <button className="toggle-btn" onClick={() => setShowColModal(true)} style={{background: '#3b82f6', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer'}}>
+               ⚙️ Columns
+             </button>
+           )}
            <button className={`toggle-option ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')}>Grid</button>
            <button className={`toggle-option ${viewMode === 'table' ? 'active' : ''}`} onClick={() => setViewMode('table')}>Table</button>
         </div>
@@ -128,35 +174,91 @@ const PlayerList = ({
           ))}
         </div>
       ) : (
-        /* --- TABLE VIEW --- */
-        <div className="table-container" style={{ padding: '20px' }}>
+        /* --- TABLE VIEW (RESTORED DYNAMIC COLS) --- */
+        <div className="table-container" style={{ margin: '20px' }}>
             <table className="player-table">
               <thead>
                 <tr>
-                  <th>Player</th>
-                  <th onClick={() => handleSort('WAR')}>WAR</th>
-                  <th onClick={() => handleSort('kWAR')}>kWAR</th>
-                  <th onClick={() => handleSort('ERA')}>ERA</th>
-                  <th onClick={() => handleSort('WHIP')}>WHIP</th>
-                  <th onClick={() => handleSort('Stuff+')}>Stuff+</th>
+                  <th style={{ position: 'sticky', left: 0, zIndex: 20 }}>Player</th>
+                  {visibleCols.map(col => (
+                    <th key={col} onClick={() => handleSort(col)} style={{ cursor: 'pointer' }}>
+                      {col} {sortConfig.key === col ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {displayPitchers.map((player) => (
                   <tr key={player.MLBID} onClick={() => goToProfile(player)} style={{ cursor: 'pointer' }}>
-                    <td className="player-cell">
-                        <PlayerHeadshot mlbId={player.MLBID} size="small" />
-                        <div><div className="player-name">{player.Name}</div><div className="player-meta">{player.Team}</div></div>
+                    <td className="player-cell" style={{ position: 'sticky', left: 0, background: '#1e293b', zIndex: 10, borderRight: '1px solid #334155' }}>
+                        <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                            <PlayerHeadshot mlbId={player.MLBID} size="small" />
+                            <div><div className="player-name">{player.Name}</div><div className="player-meta">{player.Team}</div></div>
+                        </div>
                     </td>
-                    <td>{player.WAR}</td>
-                    <td style={{ fontWeight: 'bold', color: '#a855f7' }}>{player.kWAR}</td>
-                    <td>{player.ERA?.toFixed(2)}</td>
-                    <td>{player.WHIP?.toFixed(2)}</td>
-                    <td>{player['Stuff+']?.toFixed(0)}</td>
+                    {visibleCols.map(col => (
+                        <td key={col} className={col === 'kWAR' ? 'fw-bold' : ''} style={{color: col === 'kWAR' ? '#a855f7' : 'inherit'}}>
+                            {formatCell(player, col)}
+                        </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
+        </div>
+      )}
+
+      {/* --- COLUMN SELECTION MODAL --- */}
+      {showColModal && (
+        <div className="modal-overlay" onClick={() => setShowColModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
+                <h2>Select Statistics</h2>
+                <button onClick={() => setShowColModal(false)} style={{background:'none', border:'none', color:'white', fontSize:'1.5rem', cursor:'pointer'}}>✕</button>
+            </div>
+            
+            <div className="col-sections">
+              <div className="col-section" style={{marginBottom:'20px'}}>
+                <div className="section-header" style={{display:'flex', justifyContent:'space-between', marginBottom:'10px', borderBottom:'1px solid #334155', paddingBottom:'5px'}}>
+                    <h3 style={{margin:0, color:'#93c5fd'}}>Basic Stats</h3>
+                    <div className="section-actions" style={{display:'flex', gap:'10px'}}>
+                        <button className="tiny-btn" onClick={() => selectAll('basic')}>All</button>
+                        <button className="tiny-btn" onClick={() => deselectAll('basic')}>None</button>
+                    </div>
+                </div>
+                <div className="checkbox-grid">
+                    {COLUMN_CATEGORIES.basic.map(col => (
+                        <label key={col} className="checkbox-label">
+                            <input type="checkbox" checked={visibleCols.includes(col)} onChange={() => toggleCol(col)} />
+                            {col}
+                        </label>
+                    ))}
+                </div>
+              </div>
+              
+              <div className="col-section">
+                <div className="section-header" style={{display:'flex', justifyContent:'space-between', marginBottom:'10px', borderBottom:'1px solid #334155', paddingBottom:'5px'}}>
+                    <h3 style={{margin:0, color:'#a855f7'}}>Advanced Metrics</h3>
+                    <div className="section-actions" style={{display:'flex', gap:'10px'}}>
+                        <button className="tiny-btn" onClick={() => selectAll('advanced')}>All</button>
+                        <button className="tiny-btn" onClick={() => deselectAll('advanced')}>None</button>
+                    </div>
+                </div>
+                <div className="checkbox-grid">
+                    {COLUMN_CATEGORIES.advanced.map(col => (
+                        <label key={col} className="checkbox-label">
+                            <input type="checkbox" checked={visibleCols.includes(col)} onChange={() => toggleCol(col)} />
+                            {col}
+                        </label>
+                    ))}
+                </div>
+              </div>
+            </div>
+            
+            <button className="close-btn" onClick={() => setShowColModal(false)} style={{width:'100%', padding:'15px', marginTop:'20px', background:'#22c55e', color:'white', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'bold'}}>
+                Done
+            </button>
+          </div>
         </div>
       )}
 
