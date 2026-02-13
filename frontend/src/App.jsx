@@ -9,7 +9,7 @@ import PlayerProfile from './PlayerProfile';
 import { PitchLab } from './pitchLab';
 import { ChartsView, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
-import GlossaryView from './components/GlossaryView';
+import GlossaryView from './GlossaryView';
 
 
 const API_BASE_URL = 'https://pitch-lab-api.onrender.com';
