@@ -9,8 +9,8 @@ import PlayerProfile from './PlayerProfile';
 import { PitchLab } from './pitchLab';
 import { ChartsView, SimilarityNetwork } from './ChartsView';
 import { EducationPanel } from './EducationPanel';
+import GlossaryView from './components/GlossaryView';
 
-const GlossaryView = () => <div style={{padding:'20px', color:'white'}}><h2>Glossary</h2><p>Glossary content goes here.</p></div>;
 
 const API_BASE_URL = 'https://pitch-lab-api.onrender.com';
 
